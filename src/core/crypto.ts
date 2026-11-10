@@ -1,6 +1,8 @@
 import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:crypto";
+import { applyDemoDefaults } from "./demo-env";
 
 function key(): Buffer {
+  applyDemoDefaults();
   const b64 = process.env.FIELD_ENCRYPTION_KEY;
   if (!b64) throw new Error("FIELD_ENCRYPTION_KEY is not set (see .env.example)");
   const k = Buffer.from(b64, "base64");

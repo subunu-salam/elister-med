@@ -17,7 +17,9 @@
     "seed:year:push": "tsx scripts/seed-year-push.ts",
     "seed:year:verify": "tsx scripts/year/verify.ts",
     "seed:year:tax": "tsx scripts/seed-year-tax.ts",
-    "mock:dha": "tsx scripts/mock-dha.ts"
+    "mock:dha": "tsx scripts/mock-dha.ts",
+    "vercel-build": "bash scripts/vercel-build.sh",
+    "seed:accounts": "tsx scripts/seed-accounts.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.105.3",

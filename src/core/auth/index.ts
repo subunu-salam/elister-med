@@ -7,8 +7,10 @@ import { getDbLazy } from "../db/client";
 import { getDb } from "../db/client";
 import { permissionsFor, type RoleKey } from "../rbac/roles";
 import { setCtxResolver, type Ctx } from "../rbac/authorize";
+import { applyDemoDefaults } from "../demo-env";
 
 function build() {
+  applyDemoDefaults();
   return betterAuth({
     database: mongodbAdapter(getDbLazy()),
     secret: process.env.AUTH_SECRET,
