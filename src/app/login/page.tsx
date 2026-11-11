@@ -38,7 +38,7 @@ export default function LoginPage() {
 
   return (
     <main className="grid min-h-screen gap-4 p-0 lg:grid-cols-[1.1fr_1fr] lg:p-4">
-      <section className="hero-grad relative hidden overflow-hidden rounded-[40px] p-12 text-white shadow-[var(--shadow-pop)] lg:flex lg:flex-col lg:justify-between">
+      <section className="hero-grad relative hidden overflow-hidden rounded-2xl p-12 text-white shadow-[var(--shadow-pop)] lg:flex lg:flex-col lg:justify-between">
         <Image src="/brand/mark.png" alt="" aria-hidden width={640} height={640} className="pointer-events-none absolute -bottom-32 -end-24 size-[560px] opacity-[0.07]" />
         <div aria-hidden className="pointer-events-none absolute -start-24 -top-24 size-96 rounded-full bg-cyan-300/15 blur-3xl" />
         <Image src="/brand/logo-header.png" alt="Elister Med" width={227} height={109} priority className="relative h-14 w-auto self-start" />
@@ -63,10 +63,10 @@ export default function LoginPage() {
           <div className="text-center lg:text-start">
             <Image src="/brand/logo-footer.png" alt="Elister Med" width={235} height={117} priority className="mx-auto mb-6 h-14 w-auto lg:hidden dark:hidden" />
             <Image src="/brand/logo-header.png" alt="Elister Med" width={227} height={109} className="mx-auto mb-6 hidden h-14 w-auto dark:block dark:lg:hidden" />
-            <h2 className="text-[30px] font-semibold tracking-tight">Welcome back <span aria-hidden>👋</span></h2>
+            <h2 className="text-[30px] font-semibold tracking-tight">Welcome back</h2>
             <p className="mt-1 text-sm text-muted">Sign in to Elister Med clinic management</p>
           </div>
-          <div className="panel rounded-[30px] p-7">
+          <div className="panel rounded-2xl p-7">
             {error && <div className="mb-4"><Alert>{error}</Alert></div>}
             {step === "credentials" ? (
               <form action={onCredentials} className="space-y-4">

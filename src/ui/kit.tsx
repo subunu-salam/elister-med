@@ -8,33 +8,33 @@ export const cn = clsx;
 
 export function Card({ title, action, children, className, flush, id, sub }: { id?: string; title?: ReactNode; sub?: ReactNode; action?: ReactNode; children: ReactNode; className?: string; flush?: boolean }) {
   return (
-    <section id={id} className={cn("panel overflow-hidden rounded-[30px]", className)}>
+    <section id={id} className={cn("panel overflow-hidden rounded-2xl", className)}>
       {(title || action) && (
-        <header className="flex items-start justify-between gap-3 px-6 pt-5">
-          <div className="min-w-0"><h2 className="text-[17px] font-semibold tracking-tight">{title}</h2>{sub && <p className="mt-0.5 text-xs text-muted">{sub}</p>}</div>
+        <header className="flex items-start justify-between gap-3 px-5 pt-4">
+          <div className="min-w-0"><h2 className="text-[15px] font-semibold tracking-tight">{title}</h2>{sub && <p className="mt-0.5 text-xs text-muted">{sub}</p>}</div>
           {action && <div className="shrink-0">{action}</div>}
         </header>
       )}
-      <div className={flush ? "pt-3" : cn("px-6 pb-6", title || action ? "pt-4" : "pt-6")}>{children}</div>
+      <div className={flush ? "pt-3" : cn("px-5 pb-5", title || action ? "pt-3" : "pt-5")}>{children}</div>
     </section>
   );
 }
 
-/** KPI tile: ringed icon and label on top, a large figure with its trend chip, and an optional footnote. */
+/** KPI tile: icon and label, the figure with a coloured change chip, and a footnote. */
 export function Stat({ label, value, hint, tone, icon, trend }: { label: string; value: ReactNode; hint?: ReactNode; tone?: "ok" | "warn" | "danger"; icon?: ReactNode; trend?: { pct: number | null; goodWhen?: "up" | "down" } }) {
   const t = trend && trend.pct !== null ? trend : null;
   const good = t ? (t.goodWhen === "down" ? t.pct! <= 0 : t.pct! >= 0) : true;
   return (
-    <div className="stat-tile panel panel-hover rounded-[30px] p-5">
-      <div className="flex items-center gap-3">
-        {icon && <span className="ring-icon size-11 shrink-0">{icon}</span>}
-        <div className="min-w-0 text-[14px] font-semibold leading-snug tracking-tight">{label}</div>
+    <div className="stat-tile panel panel-hover rounded-2xl p-4">
+      <div className="flex items-center gap-2.5">
+        {icon && <span className="ring-icon size-8 shrink-0">{icon}</span>}
+        <div className="min-w-0 flex-1 truncate text-[13px] font-medium text-muted">{label}</div>
       </div>
-      <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2">
-        <div className={cn("text-[30px] font-semibold leading-none tracking-tight tabular-nums", tone === "ok" && "text-ok", tone === "warn" && "text-warn", tone === "danger" && "text-danger")}>{value}</div>
-        {t && <span className={cn("trend-chip", good ? "text-primary" : "text-danger")}>{t.pct! >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}{Math.abs(t.pct!).toFixed(1)}%<span className="font-normal text-muted">vs last period</span></span>}
+      <div className="mt-3 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+        <div className={cn("text-[26px] font-semibold leading-tight tracking-tight tabular-nums", tone === "ok" && "text-ok", tone === "warn" && "text-warn", tone === "danger" && "text-danger")}>{value}</div>
+        {t && <span className={cn("trend-chip", good ? "trend-up" : "trend-down")}>{t.pct! >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}{t.pct! >= 0 ? "+" : "−"}{Math.abs(t.pct!).toFixed(1)}%</span>}
       </div>
-      {hint && <div className="mt-3 text-xs text-muted">{hint}</div>}
+      {hint && <div className="mt-1.5 text-xs text-muted">{hint}</div>}
     </div>
   );
 }
@@ -44,7 +44,7 @@ export function Badge({ children, tone = "neutral" }: { children: ReactNode; ton
   return <span className={cn("inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium", t)}><span aria-hidden className="size-1.5 rounded-full bg-current opacity-80 shadow-[0_0_0_3px_color-mix(in_srgb,currentColor_18%,transparent)]" />{children}</span>;
 }
 
-const field = "w-full rounded-2xl border border-border bg-surface/90 px-4 py-2.5 text-sm text-fg transition placeholder:text-muted/70 hover:border-muted/50 focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/15 disabled:opacity-60";
+const field = "w-full rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm text-fg transition placeholder:text-muted/70 hover:border-muted/50 focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/15 disabled:opacity-60";
 export const Input = (p: InputHTMLAttributes<HTMLInputElement>) => <input {...p} className={cn(field, p.className)} />;
 export const Select = (p: SelectHTMLAttributes<HTMLSelectElement>) => <select {...p} className={cn(field, "pe-8", p.className)} />;
 export const Textarea = (p: TextareaHTMLAttributes<HTMLTextAreaElement>) => <textarea {...p} className={cn(field, "min-h-24", p.className)} />;
@@ -66,12 +66,12 @@ export function Button({ variant = "primary", className, ...p }: ButtonHTMLAttri
     outline: "border border-border bg-surface text-fg hover:bg-surface-2",
     danger: "bg-danger text-white hover:brightness-95",
   }[variant];
-  return <button {...p} className={cn("inline-flex items-center justify-center gap-1.5 rounded-full px-5 py-2.5 text-sm font-medium transition active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50", v, className)} />;
+  return <button {...p} className={cn("inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-medium transition active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50", v, className)} />;
 }
 
 export function Table({ head, children, empty }: { head: string[]; children: ReactNode; empty?: string }) {
   return (
-    <div className="overflow-x-auto rounded-[22px] border border-border bg-surface/90">
+    <div className="overflow-x-auto rounded-xl border border-border bg-surface">
       <table className="w-full text-sm">
         <thead className="bg-surface-2/80">
           <tr className="text-start">
@@ -100,12 +100,12 @@ export function Alert({ tone = "danger", children }: { tone?: "danger" | "ok" | 
 
 export function PageHeader({ title, sub, actions, eyebrow }: { title: ReactNode; sub?: ReactNode; actions?: ReactNode; eyebrow?: ReactNode }) {
   return (
-    <div className="page-in mb-6 flex flex-wrap items-end justify-between gap-4">
+    <div className="page-in mb-5 flex flex-wrap items-end justify-between gap-4">
       <div className="flex min-w-0 items-center gap-4">
-        <span aria-hidden className="ring-icon hidden size-14 shrink-0 sm:grid"><RouteIcon size={24} /></span>
+        <span aria-hidden className="ring-icon hidden size-11 shrink-0 sm:grid"><RouteIcon size={20} /></span>
         <div className="min-w-0">
           {eyebrow && <div className="mb-1 text-sm text-muted">{eyebrow}</div>}
-          <h1 className="text-[30px] font-semibold leading-[1.15] tracking-tight text-fg">{title}</h1>
+          <h1 className="text-[24px] font-semibold leading-tight tracking-tight text-fg">{title}</h1>
           {sub && <p className="mt-2 max-w-3xl text-sm text-muted">{sub}</p>}
         </div>
       </div>
@@ -130,9 +130,9 @@ export function NoAccess({ what = "this page" }: { what?: string }) {
 export function Tabs({ tabs, active, base = "" }: { tabs: { key: string; label: string }[]; active: string; base?: string }) {
   return (
     <Slide label="Sections" storeKey={`tabs:${base}`} active={active} items={tabs.map((t) => ({ key: t.key, label: t.label, href: `${base}?tab=${t.key}` }))}
-      track="glass-tabs mb-1 flex max-w-full flex-wrap gap-1 rounded-full p-1.5"
-      itemClass="rounded-full px-4 py-1.5 text-sm text-muted hover:text-fg" activeClass="!text-[var(--btn-fg)] font-medium hover:!text-[var(--btn-fg)]"
-      thumbClass="rounded-full bg-[var(--btn-bg)] shadow-[inset_0_1px_0_rgba(255,255,255,.18),0_6px_14px_-8px_rgba(11,53,88,.7)]" />
+      track="glass-tabs mb-1 flex max-w-full flex-wrap gap-1 rounded-xl p-1"
+      itemClass="rounded-lg px-3.5 py-1.5 text-sm text-muted hover:text-fg" activeClass="!text-[var(--btn-fg)] font-medium hover:!text-[var(--btn-fg)]"
+      thumbClass="rounded-lg bg-[var(--btn-bg)]" />
   );
 }
 

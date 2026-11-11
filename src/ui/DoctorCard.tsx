@@ -14,7 +14,7 @@ export function DoctorCard({ doctor: d, photo, canEditPhoto, today, bookHref }: 
   const onToday = d.workDays.includes(today);
   const key = d.userId ?? d._id; // doctors without a login still get a photo, keyed by their staff record
   return (
-    <article className="panel flex w-[17rem] shrink-0 snap-start flex-col items-center rounded-[28px] p-5 text-center">
+    <article className="panel flex w-[17rem] shrink-0 snap-start flex-col items-center rounded-2xl p-5 text-center">
       <div className="relative">
         <Avatar name={d.name} userId={key} photo={photo} size={92} className="ring-4 ring-tint" />
         <span title={onToday ? "Working today" : "Not working today"} className={cn("absolute bottom-1 end-1 size-4 rounded-full ring-2 ring-surface", onToday ? "bg-ok" : "bg-muted/50")} />

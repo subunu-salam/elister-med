@@ -39,7 +39,7 @@ export function Mark({ className, size = 32 }: { className?: string; size?: numb
 /** Brand banner for module landing pages: white logo on the Elister gradient with the clinic's tagline. */
 export function BrandBanner({ eyebrow, title, children }: { eyebrow?: string; title: string; children?: ReactNode }) {
   return (
-    <div className="hero-grad relative mb-6 overflow-hidden rounded-[32px] p-7 text-white sm:p-8">
+    <div className="hero-grad relative mb-6 overflow-hidden rounded-2xl p-7 text-white sm:p-8">
       <span aria-hidden className="pointer-events-none absolute -end-8 top-1/2 -translate-y-1/2 text-white opacity-[0.1]"><RouteIcon size={230} strokeWidth={1} /></span>
       <div className="relative flex flex-wrap items-center justify-between gap-4">
         <div className="min-w-0">

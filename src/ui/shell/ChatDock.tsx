@@ -62,7 +62,7 @@ export function ChatDock() {
   const full = max && !wide; // phones: maximised means the whole screen
   return (
     <section role="dialog" aria-label="Team chat" onKeyDown={(e) => { if (e.key === "Escape") setOpen(false); }}
-      className={cn("dock-in no-print fixed z-40 flex origin-bottom-right flex-col overflow-hidden rounded-[28px] bg-surface shadow-[var(--shadow-pop)] ring-1 ring-border transition-[width,height] duration-300 ease-out",
+      className={cn("dock-in no-print fixed z-40 flex origin-bottom-right flex-col overflow-hidden rounded-2xl bg-surface shadow-[var(--shadow-pop)] ring-1 ring-border transition-[width,height] duration-300 ease-out",
         full ? "inset-2" : max ? "bottom-4 end-4 h-[min(42rem,calc(100dvh-2rem))] w-[min(64rem,calc(100vw-2rem))]" : "bottom-4 end-4 h-[min(34rem,calc(100dvh-2rem))] w-[min(23rem,calc(100vw-2rem))]")}>
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-4">
         <span className="grid size-8 place-items-center rounded-full brand-grad text-white"><MessageCircle size={16} /></span>

@@ -3,15 +3,16 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /*
- * Elister Med v6, "aurora": an airy blue canvas lit by two soft azure/teal glows, frosted white tiles with a bright top edge,
+ * Elister Med v7, "clinic": flat white surfaces with hairline borders on a cool grey canvas, a full labelled sidebar and a
+ * search-first top bar (after the Prvaha / DigiClinic references). Earlier: v6 "aurora": an airy blue canvas lit by two soft azure/teal glows, frosted white tiles with a bright top edge,
  * a white floating icon rail with a navy halo for the active page, and the same three brand colours throughout.
  * The glows are painted once on a fixed layer (no blur filters), so scrolling stays cheap. Earlier designs: tags design-v1..v5.
  */
 :root {
-  --bg: #e8f1f8;
+  --bg: #f3f6f9;
   --surface: #ffffff;
-  --surface-2: #f1f6fb;
-  --border: #dbe6ef;
+  --surface-2: #f4f7fa;
+  --border: #e3e9ef;
   --fg: #0c2238;
   --muted: #5f7488;
   --primary: #0a7ba5;
@@ -22,19 +23,19 @@
   --ok: #0f8a5f;
   --warn: #b25f07;
   --danger: #c23a2b;
-  --radius: 1.25rem;
+  --radius: 0.875rem;
 
   /* Elister: navy #0b3558, azure #0a7ba5, teal #00a0a0 */
   --ink: #0b3558;
   --btn-bg: #0b3558;
   --btn-fg: #ffffff;
-  --rail: rgba(255, 255, 255, 0.78);
+  --rail: #ffffff;
   --rail-fg: #5b7489;
   --brand-tint: #e1eff7;
 
-  --glass: rgba(255, 255, 255, 0.74);
-  --glass-edge: rgba(255, 255, 255, 0.95);
-  --shadow-card: 0 1px 1px rgba(11, 53, 88, 0.04), 0 10px 28px -14px rgba(10, 80, 130, 0.22), 0 24px 48px -32px rgba(10, 123, 165, 0.25);
+  --glass: #ffffff;
+  --glass-edge: var(--border);
+  --shadow-card: 0 1px 2px rgba(16, 40, 64, 0.04);
   --shadow-pop: 0 2px 6px rgba(11, 53, 88, 0.08), 0 32px 64px -26px rgba(11, 53, 88, 0.42);
   --glow-active: 0 10px 22px -8px rgba(11, 53, 88, 0.65), 0 0 0 6px rgba(10, 123, 165, 0.12);
 
@@ -46,11 +47,7 @@
     radial-gradient(60% 90% at 92% 0%, rgba(0, 160, 160, 0.75) 0%, transparent 62%),
     radial-gradient(70% 100% at 0% 100%, rgba(10, 123, 165, 0.7) 0%, transparent 60%),
     linear-gradient(135deg, #0b3558 0%, #0a5a82 100%);
-  --canvas:
-    radial-gradient(48% 42% at 88% -4%, rgba(0, 160, 160, 0.16) 0%, transparent 70%),
-    radial-gradient(42% 46% at 4% 8%, rgba(10, 123, 165, 0.16) 0%, transparent 70%),
-    radial-gradient(60% 50% at 60% 110%, rgba(40, 196, 224, 0.12) 0%, transparent 70%),
-    linear-gradient(180deg, #eef5fb 0%, #e5eff7 100%);
+  --canvas: none;
   --tint: rgba(10, 123, 165, 0.06);
 }
 .dark {
@@ -72,19 +69,16 @@
   --ink: #e8f1f7;
   --btn-bg: #e8f1f7;
   --btn-fg: #0b3558;
-  --rail: rgba(14, 32, 50, 0.82);
+  --rail: #0b1b2b;
   --rail-fg: #95aec1;
   --brand-tint: #15364d;
 
-  --glass: rgba(14, 32, 50, 0.72);
-  --glass-edge: rgba(255, 255, 255, 0.07);
+  --glass: #0e2032;
+  --glass-edge: var(--border);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 16px 36px -20px rgba(0, 0, 0, 0.7);
   --shadow-pop: 0 2px 4px rgba(0, 0, 0, 0.5), 0 30px 60px -24px rgba(0, 0, 0, 0.8);
   --glow-active: 0 10px 22px -8px rgba(76, 182, 216, 0.55), 0 0 0 6px rgba(76, 182, 216, 0.14);
-  --canvas:
-    radial-gradient(48% 42% at 88% -4%, rgba(47, 208, 200, 0.12) 0%, transparent 70%),
-    radial-gradient(42% 46% at 4% 8%, rgba(76, 182, 216, 0.12) 0%, transparent 70%),
-    linear-gradient(180deg, #071523 0%, #06111c 100%);
+  --canvas: none;
   --tint: rgba(76, 182, 216, 0.08);
 }
 
@@ -142,22 +136,21 @@ body { background-color: var(--bg); background-image: var(--canvas); background-
 .hairline { box-shadow: inset 0 -1px 0 var(--border); }
 
 /* surfaces: frosted white tiles with a bright top edge; `.glass` and `.panel` kept as names so every older page picks the look up */
-.panel, .glass, .glass-strong {
-  background: var(--glass); border: 1px solid var(--glass-edge);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), var(--shadow-card);
-}
-.dark .panel, .dark .glass, .dark .glass-strong { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), var(--shadow-card); }
-.panel-hover { transition: transform 0.3s cubic-bezier(0.2, 0.7, 0.2, 1), box-shadow 0.3s; }
-.panel-hover:hover { transform: translateY(-3px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), var(--shadow-pop); }
+.panel, .glass, .glass-strong { background: var(--glass); border: 1px solid var(--border); box-shadow: var(--shadow-card); }
+.panel-hover { transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s; }
+.panel-hover:hover { border-color: color-mix(in srgb, var(--primary) 35%, var(--border)); box-shadow: 0 8px 22px -14px rgba(11, 53, 88, 0.35); }
 
 .panel.stat-tile { --tile: var(--glass); background: var(--tile); }
 
 /* ringed icon used on stat tiles, like a small instrument dial */
-.ring-icon { display: grid; place-items: center; border-radius: 9999px; color: var(--primary); background: var(--surface); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--primary) 55%, transparent), 0 6px 14px -8px rgba(10, 123, 165, 0.6); }
-.trend-chip { display: inline-flex; align-items: center; gap: 4px; border-radius: 9999px; padding: 2px 9px; font-size: 11.5px; font-weight: 500; background: var(--surface); box-shadow: 0 0 0 1px var(--border); }
+.ring-icon { display: grid; place-items: center; border-radius: 10px; color: var(--primary); background: var(--brand-tint); }
+.trend-chip { display: inline-flex; align-items: center; gap: 3px; border-radius: 6px; padding: 2px 7px; font-size: 11px; font-weight: 600; }
+.trend-up { background: color-mix(in srgb, var(--ok) 13%, transparent); color: var(--ok); }
+.trend-down { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
 
 /* chart helpers */
-.bar-fill { background: var(--grad-bar); box-shadow: 0 10px 18px -10px rgba(10, 123, 165, 0.8); }
+.bar-fill { background: var(--primary); }
+.bar-prev { background: color-mix(in srgb, var(--accent) 45%, transparent); }
 .bar-hatch { background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--primary) 38%, transparent) 0 1.5px, transparent 1.5px 7px); }
 .bar-dots { background-image: radial-gradient(color-mix(in srgb, var(--primary) 45%, transparent) 1.2px, transparent 1.4px); background-size: 7px 7px; }
 
@@ -166,29 +159,24 @@ body { background-color: var(--bg); background-image: var(--canvas); background-
 .btn-gloss:hover { filter: brightness(1.2); }
 .dark .btn-gloss:hover { filter: brightness(0.92); }
 
-/* the rail: a white floating capsule of icon circles, opening over the page on hover or focus */
-.side-glass { background: var(--rail); border: 1px solid var(--glass-edge); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), var(--shadow-card); color: var(--rail-fg); }
-.rail { width: 76px; transition: width 0.32s cubic-bezier(0.2, 0.7, 0.2, 1), box-shadow 0.32s; }
-.rail:hover, .rail:focus-within { width: 244px; box-shadow: var(--shadow-pop); }
-.rail .rail-label { opacity: 0; transform: translateX(-4px); transition: opacity 0.2s, transform 0.25s; white-space: nowrap; }
-.rail:hover .rail-label, .rail:focus-within .rail-label { opacity: 1; transform: none; transition-delay: 0.08s; }
-[dir="rtl"] .rail .rail-label { transform: translateX(4px); }
-.rail-dot { transition: top 0.55s cubic-bezier(0.65, 0.05, 0.2, 1), opacity 0.2s; background: var(--btn-bg); box-shadow: var(--glow-active); }
-.rail-nav { scrollbar-width: none; }
-.rail-nav::-webkit-scrollbar { display: none; }
-.logo-capsule { background: var(--grad-capsule); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 14px 26px -12px rgba(10, 123, 165, 0.85); }
+/* sidebar: full width with labels, collapsible to icons (state in localStorage) */
+.sidebar { width: 256px; background: var(--rail); border-inline-end: 1px solid var(--border); transition: width 0.25s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.sidebar[data-collapsed="true"] { width: 76px; }
+.sidebar[data-collapsed="true"] .sb-label, .sidebar[data-collapsed="true"] .sb-group { display: none; }
+.sb-item { display: flex; align-items: center; gap: 12px; height: 42px; padding-inline: 12px; border-radius: 10px; font-size: 13.5px; color: var(--muted); transition: background 0.15s, color 0.15s; }
+.sb-item:hover { background: var(--surface-2); color: var(--fg); }
+.sb-item[aria-current="page"] { background: var(--btn-bg); color: var(--btn-fg); font-weight: 500; box-shadow: 0 6px 14px -8px rgba(11, 53, 88, 0.7); }
+.sidebar[data-collapsed="true"] .sb-item { justify-content: center; padding-inline: 0; }
+.sb-group { padding: 14px 12px 6px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: color-mix(in srgb, var(--muted) 80%, transparent); }
+.sb-nav { scrollbar-width: none; } .sb-nav::-webkit-scrollbar { display: none; }
+.logo-capsule { background: var(--grad-brand); }
 
-/* top bar: frosted strip that the page scrolls under */
-.topbar { background: color-mix(in srgb, var(--bg) 70%, transparent); -webkit-backdrop-filter: blur(16px) saturate(150%); backdrop-filter: blur(16px) saturate(150%); }
+/* top bar */
+.topbar { background: color-mix(in srgb, var(--surface) 92%, transparent); border-bottom: 1px solid var(--border); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
 
 /* tabs: a small frosted-glass track (the one place blur is used) with an ink pill for the active tab, matching the command pill */
-.glass-tabs {
-  background: color-mix(in srgb, var(--surface) 62%, transparent);
-  -webkit-backdrop-filter: blur(14px) saturate(160%); backdrop-filter: blur(14px) saturate(160%);
-  border: 1px solid color-mix(in srgb, #fff 70%, var(--border));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 8px 22px -14px rgba(20, 24, 31, 0.25);
-}
-.dark .glass-tabs { border-color: rgba(255, 255, 255, 0.08); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 8px 22px -14px rgba(0, 0, 0, 0.6); }
+.glass-tabs { background: var(--surface); border: 1px solid var(--border); }
+.dark .glass-tabs { border-color: var(--border); }
 
 /* login, kiosk and display pages keep their gradient */
 .side-grad { background: linear-gradient(185deg, #0a2f4f 0%, #0b4a7e 52%, #08708f 100%); }

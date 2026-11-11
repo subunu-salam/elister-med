@@ -9,13 +9,11 @@ import { executiveDashboard } from "@/modules/dashboard/executive";
 import { receptionDashboard } from "@/modules/dashboard/reception";
 import { doctorDashboard } from "@/modules/dashboard/doctor";
 import { accountsDashboard } from "@/modules/dashboard/accounts";
-import { DoctorCard } from "@/ui/DoctorCard";
 import { listDoctors } from "@/modules/appointments/service";
-import { photoVersions } from "@/modules/people/photos";
 import { dubaiParts } from "@/core/time";
 import { Badge, Button, Card, Donut, Input, PageHeader, Stat, aed } from "@/ui/kit";
 import { tenantCol } from "@/core/db";
-import { HalfGauge, WeekBars } from "@/ui/dashboard/charts";
+import { MiniCalendar, PairBars, RingTotal } from "@/ui/dashboard/charts";
 import type { Ctx } from "@/core/rbac/authorize";
 
 const DAY = 86400000;
@@ -38,6 +36,24 @@ async function weekActivity(ctx: Ctx) {
   return { days, thisWeek, pct: lastWeek ? ((thisWeek - lastWeek) / lastWeek) * 100 : null };
 }
 
+/** Today's appointments (Dubai) with patient and doctor names, and which days of this month have bookings. */
+async function todayAndMonth(ctx: Ctx) {
+  const l = new Date(Date.now() + 4 * 3600000);
+  const y = l.getUTCFullYear(), m = l.getUTCMonth(), d = l.getUTCDate();
+  const at = (yy: number, mm: number, dd: number) => new Date(Date.UTC(yy, mm, dd) - 4 * 3600000);
+  const appts = tenantCol<{ _id: string; start: Date; patientId: string; doctorId: string; status: string; type: string }>(ctx.orgId, "appointments");
+  const [today, month] = await Promise.all([
+    appts.find({ start: { $gte: at(y, m, d), $lt: at(y, m, d + 1) }, status: { $nin: ["cancelled"] } } as never, { sort: { start: 1 }, limit: 8 }),
+    appts.aggregate<{ _id: number }>([{ $match: { start: { $gte: at(y, m, 1), $lt: at(y, m + 1, 1) }, status: { $nin: ["cancelled"] } } }, { $group: { _id: { $dayOfMonth: { date: "$start", timezone: "+04:00" } } } }]),
+  ]);
+  const [pats, docs] = await Promise.all([
+    tenantCol<{ _id: string; fullName: string }>(ctx.orgId, "patients").find({ _id: { $in: today.map((a) => a.patientId) } } as never, { limit: 20 }),
+    tenantCol<{ _id: string; name: string }>(ctx.orgId, "staff").find({ _id: { $in: today.map((a) => a.doctorId) } } as never, { limit: 20 }),
+  ]);
+  const pn = new Map(pats.map((p) => [p._id, p.fullName])), dn = new Map(docs.map((x) => [x._id, x.name]));
+  return { y, m, d, busy: new Set(month.map((x) => x._id)), list: today.map((a) => ({ id: a._id, time: a.start.toLocaleTimeString("en-GB", { timeZone: "Asia/Dubai", hour: "2-digit", minute: "2-digit" }), patient: pn.get(a.patientId) ?? "Patient", doctor: dn.get(a.doctorId) ?? "", status: a.status, type: a.type })) };
+}
+
 type SP = Promise<{ from?: string; to?: string }>;
 
 export default async function DashboardPage({ searchParams }: { searchParams: SP }) {
@@ -49,7 +65,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
   const can = (p: string) => ctx.permissions.includes(p as never);
 
   /* Independent widgets load side by side, not one after another. */
-  const [exec, reception, doctor, accounts, doctors, week, patientCount] = await Promise.all([
+  const [exec, reception, doctor, accounts, doctors, week, patientCount, agenda] = await Promise.all([
     can("reports:view") && show("executive") ? executiveDashboard(ctx, { from, to }) : null,
     can("appointments:view") && can("queue:view") && show("reception") ? receptionDashboard(ctx, { day: new Date() }) : null,
     ctx.roles.includes("doctor") && show("doctor") ? doctorDashboard(ctx, { day: new Date() }).catch(() => null) : null,
@@ -57,9 +73,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
     can("appointments:view") ? listDoctors(ctx) : [],
     can("appointments:view") ? weekActivity(ctx) : null,
     can("patients:view") ? tenantCol(ctx.orgId, "patients").count({} as never) : null,
+    can("appointments:view") && can("patients:view") ? todayAndMonth(ctx) : null,
   ]);
 
-  const photos = await photoVersions(ctx.orgId, doctors.map((d) => d.userId ?? d._id));
   const todayDow = dubaiParts(new Date()).dow;
   const launch = ([
     can("patients:create") && { href: "/patients/new", label: "Register patient", icon: UserPlus },
@@ -78,55 +94,87 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
 
   return (
     <div className="space-y-8">
-      <section aria-label="Overview" className="stagger grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {patientCount !== null && <Stat label="Total patients" icon={<Users size={18} />} value={patientCount.toLocaleString("en-AE")} hint={exec ? <span>New <b className="text-fg">{exec.current.newPatients}</b> · Returning <b className="text-fg">{exec.current.returningPatients}</b> this period</span> : "Registered patients"} />}
-        {week && <Stat label="Appointments this week" icon={<CalendarDays size={18} />} value={week.thisWeek} trend={{ pct: week.pct }} hint={reception ? <span>Today <b className="text-fg">{reception.todaysAppointments}</b> · Waiting <b className="text-fg">{reception.patientsWaiting}</b></span> : undefined} />}
-        {exec && <Stat label="Revenue" icon={<Banknote size={18} />} value={aed(exec.current.revenue)} trend={{ pct: exec.delta.revenue.pct }} hint={`Net profit ${aed(exec.current.netProfit)}`} />}
-        {exec ? <Stat label="Outstanding receivables" icon={<Activity size={18} />} value={aed(exec.current.outstandingReceivables)} hint={`No-show rate ${(exec.current.noShowRate * 100).toFixed(1)}% · Avg wait ${exec.current.avgWaitMinutes.toFixed(0)} min`} />
-          : accounts ? <Stat label="Daily sales" icon={<Activity size={18} />} value={aed(accounts.dailySales)} hint={`Open invoices ${accounts.outstandingInvoices}`} /> : null}
-      </section>
+      <div className="page-in flex flex-wrap items-end justify-between gap-3">
+        <div><h1 className="text-[24px] font-semibold tracking-tight">Dashboard</h1><p className="text-sm text-muted">Today at the clinic, at a glance.</p></div>
+        <div className="flex gap-2">
+          {can("appointments:create") && <Link href="/appointments#book" className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-surface px-3.5 py-2 text-sm font-medium hover:bg-surface-2"><CalendarDays size={15} />Book appointment</Link>}
+          {can("patients:create") && <Link href="/patients/new" className="btn-gloss inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium"><UserPlus size={15} />Register patient</Link>}
+        </div>
+      </div>
 
-      {(week || exec) && (
-        <section className="grid gap-4 xl:grid-cols-3">
-          {week && (
-            <Card className="xl:col-span-2" title="Analytics" sub="Appointments per day, this week against the same day last week"
-              action={<span className="trend-chip text-primary"><CalendarDays size={12} /> Last 7 days</span>}>
-              <div className="mb-4 flex items-baseline gap-3"><span className="text-[34px] font-semibold leading-none tabular-nums">{week.thisWeek}</span>{week.pct !== null && <span className="trend-chip text-primary">{week.pct >= 0 ? "↗" : "↘"} {Math.abs(week.pct).toFixed(1)}% <span className="font-normal text-muted">vs previous week</span></span>}</div>
-              <WeekBars days={week.days} />
-              <div className="mt-3 flex flex-wrap gap-4 text-xs text-muted"><span className="flex items-center gap-1.5"><span className="bar-fill inline-block size-3 rounded" />This week</span><span className="flex items-center gap-1.5"><span className="bar-hatch inline-block size-3 rounded" />Same day last week</span></div>
+      <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="min-w-0 space-y-5">
+          <section aria-label="Overview" className="stagger grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {patientCount !== null && <Stat label="Total patients" icon={<Users size={16} />} value={patientCount.toLocaleString("en-AE")} hint={exec ? `${exec.current.newPatients} new this period` : "Registered"} />}
+            {week && <Stat label="Appointments" icon={<CalendarDays size={16} />} value={week.thisWeek} trend={{ pct: week.pct }} hint={reception ? `${reception.todaysAppointments} today · ${reception.patientsWaiting} waiting` : "Last 7 days"} />}
+            {exec && <Stat label="Revenue" icon={<Banknote size={16} />} value={aed(exec.current.revenue)} trend={{ pct: exec.delta.revenue.pct }} hint={`Net profit ${aed(exec.current.netProfit)}`} />}
+            {exec ? <Stat label="Receivables" icon={<Activity size={16} />} value={aed(exec.current.outstandingReceivables)} hint={`No-show ${(exec.current.noShowRate * 100).toFixed(1)}% · wait ${exec.current.avgWaitMinutes.toFixed(0)} min`} />
+              : accounts ? <Stat label="Daily sales" icon={<Activity size={16} />} value={aed(accounts.dailySales)} hint={`Open invoices ${accounts.outstandingInvoices}`} /> : null}
+          </section>
+
+          {(week || exec) && (
+            <section className="grid gap-5 xl:grid-cols-5">
+              {week && (
+                <Card className="xl:col-span-3" title="Patient visits" sub="Appointments per day"
+                  action={<div className="flex items-center gap-3 text-xs text-muted"><span className="flex items-center gap-1.5"><span className="bar-fill size-2.5 rounded-full" />This week</span><span className="flex items-center gap-1.5"><span className="bar-prev size-2.5 rounded-full" />Last week</span></div>}>
+                  <div className="mb-3 flex items-baseline gap-2"><span className="text-2xl font-semibold tabular-nums">{week.thisWeek}</span><span className="text-xs text-muted">visits in the last 7 days</span>{week.pct !== null && <span className={`trend-chip ${week.pct >= 0 ? "trend-up" : "trend-down"}`}>{week.pct >= 0 ? "+" : "−"}{Math.abs(week.pct).toFixed(1)}%</span>}</div>
+                  <PairBars days={week.days} />
+                </Card>
+              )}
+              {exec && (
+                <Card className="xl:col-span-2" title="Patient overview" sub="New and returning, selected period">
+                  <RingTotal parts={[{ label: "New patients", value: exec.current.newPatients }, { label: "Returning patients", value: exec.current.returningPatients }]} total={(exec.current.newPatients + exec.current.returningPatients).toLocaleString("en-AE")} caption="this period" />
+                </Card>
+              )}
+            </section>
+          )}
+
+          {doctors.length > 0 && (
+            <Card title="Doctor's schedule" sub="Who is in today" action={<Link href="/appointments" className="text-xs font-medium text-primary hover:underline">View all</Link>}>
+              <ul className="grid gap-x-6 sm:grid-cols-2">
+                {doctors.map((d) => { const on = d.workDays.includes(todayDow); return (
+                  <li key={d._id} className="flex items-center gap-3 border-b border-border py-3 last:border-b-0 sm:[&:nth-last-child(2)]:border-b-0">
+                    <span aria-hidden className="grid size-10 shrink-0 place-items-center rounded-full bg-tint text-xs font-semibold text-primary">{d.name.replace(/^Dr\.?\s*/, "").split(" ").map((w) => w[0]).slice(0, 2).join("")}</span>
+                    <div className="min-w-0 flex-1"><div className="truncate text-sm font-medium">{d.name}</div><div className="truncate text-xs text-muted">{d.specialty ?? "Doctor"} · {d.workStart}–{d.workEnd}</div></div>
+                    <Badge tone={on ? "ok" : "danger"}>{on ? "Available" : "Unavailable"}</Badge>
+                  </li>); })}
+              </ul>
             </Card>
           )}
-          {exec && (
-            <Card title="Patients" sub="New and returning in the selected period">
-              <HalfGauge a={{ label: "New", value: exec.current.newPatients }} b={{ label: "Returning", value: exec.current.returningPatients }} sub="Seen this period" centre={(exec.current.newPatients + exec.current.returningPatients).toLocaleString("en-AE")} />
-              <dl className="mt-5 grid grid-cols-2 gap-3 text-sm">
-                <div className="rounded-2xl bg-surface-2 p-3"><dt className="text-xs text-muted">Appointments</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{exec.current.appointments}</dd></div>
-                <div className="rounded-2xl bg-surface-2 p-3"><dt className="text-xs text-muted">No-show rate</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{(exec.current.noShowRate * 100).toFixed(1)}%</dd></div>
-              </dl>
+        </div>
+
+        {agenda && (
+          <aside className="space-y-5" aria-label="Today">
+            <Card><MiniCalendar year={agenda.y} month={agenda.m} today={agenda.d} busy={agenda.busy} /></Card>
+            <Card title="Today's appointments" action={<Link href="/queue" className="text-xs font-medium text-primary hover:underline">Queue</Link>}>
+              {agenda.list.length === 0 ? <p className="text-sm text-muted">No appointments today.</p> : (
+                <ol className="relative space-y-3 border-s border-dashed border-border ps-4">
+                  {agenda.list.map((a) => (
+                    <li key={a.id} className="relative">
+                      <span aria-hidden className={`absolute -start-[21px] top-3 size-2.5 rounded-full ring-4 ring-surface ${a.status === "completed" ? "bg-ok" : a.status === "in_consult" ? "bg-accent" : "bg-primary"}`} />
+                      <div className="rounded-xl border border-border bg-surface-2 p-3">
+                        <div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-medium">{a.patient}</span><span className="text-xs tabular-nums text-muted">{a.time}</span></div>
+                        <div className="mt-0.5 flex items-center justify-between gap-2 text-xs text-muted"><span className="truncate">{a.doctor}{a.type ? ` · ${a.type}` : ""}</span><span className="capitalize">{a.status.replace("_", " ")}</span></div>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              )}
             </Card>
-          )}
-        </section>
-      )}
+          </aside>
+        )}
+      </div>
 
       {launch.length > 0 && (
         <section aria-label="Quick start" className="space-y-3">
           <h2 className="text-[19px] font-semibold tracking-tight">Quick actions</h2>
           <div className="stagger grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             {launch.map((q) => (
-              <Link key={q.href} href={q.href} className="panel panel-hover group flex items-center gap-3 rounded-[26px] p-4">
+              <Link key={q.href} href={q.href} className="panel panel-hover group flex items-center gap-3 rounded-2xl p-4">
                 <span className="ring-icon size-12 shrink-0 transition-transform duration-300 group-hover:scale-105"><q.icon size={20} strokeWidth={1.7} /></span>
                 <span className="text-sm font-medium leading-tight">{q.label}</span>
               </Link>
             ))}
-          </div>
-        </section>
-      )}
-
-      {doctors.length > 0 && (
-        <section aria-label="Doctors" className="space-y-3">
-          <h2 className="text-[19px] font-semibold tracking-tight">Our doctors</h2>
-          <div className="-mx-1 flex snap-x gap-3 overflow-x-auto px-1 pb-2">
-            {doctors.map((d) => <DoctorCard key={d._id} doctor={d} today={todayDow} photo={photos.get(d.userId ?? d._id)} canEditPhoto={can("hr:update")} bookHref={can("appointments:create") ? "/appointments#book" : undefined} />)}
           </div>
         </section>
       )}
@@ -146,7 +194,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
             <Stat label="Avg wait (min)" icon={<Clock size={16} />} value={exec.current.avgWaitMinutes.toFixed(1)} />
           </div>
           <div className="grid gap-3 lg:grid-cols-5">
-            <section className="hero-grad relative overflow-hidden rounded-[32px] p-6 text-white lg:col-span-3">
+            <section className="hero-grad relative overflow-hidden rounded-2xl p-6 text-white lg:col-span-3">
               <h2 className="text-[17px] font-medium">Revenue by doctor</h2>
               <p className="mt-0.5 text-sm text-white/75">Top earners in the selected period.</p>
               {topDoctors.length === 0 ? <p className="mt-6 text-sm text-white/80">No revenue in this period.</p> : (
@@ -204,7 +252,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
 
       {recent.length > 0 && <Card title="Recently opened patients"><ul className="flex flex-wrap gap-2">{recent.map((r) => <li key={r.id}><Link className="inline-flex items-center gap-2 rounded-full border border-border bg-surface-2 px-4 py-2 text-sm transition hover:bg-bg" href={`/patients/${r.id}`}>{r.fullName} <span className="font-mono text-xs text-muted">{r.mrn}</span></Link></li>)}</ul></Card>}
 
-      <details className="panel rounded-[28px] px-6 py-5 text-sm"><summary className="cursor-pointer font-medium">Customise my dashboard</summary>
+      <details className="panel rounded-2xl px-6 py-5 text-sm"><summary className="cursor-pointer font-medium">Customise my dashboard</summary>
         <form action={dispatch} className="mt-3 flex flex-wrap items-center gap-4"><input type="hidden" name="_a" value="prefs.widgets" /><input type="hidden" name="_back" value="/dashboard" />
           {ALL_WIDGETS.map((w) => <label key={w} className="flex items-center gap-1.5 capitalize"><input type="checkbox" name="widget" value={w} defaultChecked={show(w)} /> {w}</label>)}<Button variant="outline">Save</Button></form>
         <p className="mt-2 text-xs text-muted">Only widgets your role may see are ever shown; this hides the ones you do not want.</p></details>
