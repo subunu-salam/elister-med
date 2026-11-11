@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { CalendarCheck, Languages, ShieldCheck, Stethoscope } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { Alert, Button, Field, Input } from "@/ui/kit";
+import { Backdrop } from "@/ui/shell/Backdrop";
 
 const POINTS = [
   { icon: CalendarCheck, title: "One connected journey", text: "From booking and check-in to consultation, billing and payment." },
@@ -38,7 +39,8 @@ export default function LoginPage() {
 
   return (
     <main className="grid min-h-screen gap-4 p-0 lg:grid-cols-[1.1fr_1fr] lg:p-4">
-      <section className="hero-grad relative hidden overflow-hidden rounded-2xl p-12 text-white shadow-[var(--shadow-pop)] lg:flex lg:flex-col lg:justify-between">
+      <Backdrop />
+      <section className="hero-banner relative hidden overflow-hidden rounded-2xl p-12 text-white shadow-[var(--shadow-pop)] lg:flex lg:flex-col lg:justify-between">
         <Image src="/brand/mark.png" alt="" aria-hidden width={640} height={640} className="pointer-events-none absolute -bottom-32 -end-24 size-[560px] opacity-[0.07]" />
         <div aria-hidden className="pointer-events-none absolute -start-24 -top-24 size-96 rounded-full bg-cyan-300/15 blur-3xl" />
         <Image src="/brand/logo-header.png" alt="Elister Med" width={227} height={109} priority className="relative h-14 w-auto self-start" />

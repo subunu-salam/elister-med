@@ -17,6 +17,8 @@ import { MiniCalendar, PairBars, RingTotal } from "@/ui/dashboard/charts";
 import type { Ctx } from "@/core/rbac/authorize";
 
 const DAY = 86400000;
+const dubaiToday = () => new Date().toLocaleDateString("en-GB", { timeZone: "Asia/Dubai", weekday: "long", day: "numeric", month: "long", year: "numeric" });
+const hello = () => { const h = Number(new Date().toLocaleString("en-GB", { timeZone: "Asia/Dubai", hour: "2-digit", hour12: false })); return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"; };
 /** Appointments per Dubai day for the last 7 days, with the same weekday a week earlier for comparison. */
 async function weekActivity(ctx: Ctx) {
   const now = new Date();
@@ -77,6 +79,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
   ]);
 
   const todayDow = dubaiParts(new Date()).dow;
+  const first = ctx.name.replace(/\(.*?\)/g, "").trim().split(" ")[0];
   const launch = ([
     can("patients:create") && { href: "/patients/new", label: "Register patient", icon: UserPlus },
     can("appointments:view") && { href: "/appointments", label: "Appointments", icon: CalendarDays },
@@ -94,19 +97,36 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
 
   return (
     <div className="space-y-8">
-      <div className="page-in flex flex-wrap items-end justify-between gap-3">
-        <div><h1 className="text-[24px] font-semibold tracking-tight">Dashboard</h1><p className="text-sm text-muted">Today at the clinic, at a glance.</p></div>
-        <div className="flex gap-2">
-          {can("appointments:create") && <Link href="/appointments#book" className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-surface px-3.5 py-2 text-sm font-medium hover:bg-surface-2"><CalendarDays size={15} />Book appointment</Link>}
-          {can("patients:create") && <Link href="/patients/new" className="btn-gloss inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium"><UserPlus size={15} />Register patient</Link>}
+      <section className="hero-banner page-in rounded-3xl p-6 md:p-8">
+        <span aria-hidden className="rings" />
+        <div className="relative grid items-center gap-6 lg:grid-cols-[1fr_auto]">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-100/80">{dubaiToday()}</p>
+            <h1 className="mt-2 text-[28px] font-semibold leading-tight tracking-tight md:text-[34px]">{hello()}, {first}</h1>
+            <p className="mt-2 max-w-xl text-sm text-white/75">{reception ? `${reception.todaysAppointments} appointments today, ${reception.patientsWaiting} waiting and ${reception.inConsult} in consultation.` : "Here is how the clinic is doing today."}</p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              {can("patients:create") && <Link href="/patients/new" className="inline-flex items-center gap-1.5 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#0b3558] shadow-lg transition hover:-translate-y-0.5"><UserPlus size={15} />Register patient</Link>}
+              {can("appointments:create") && <Link href="/appointments#book" className="inline-flex items-center gap-1.5 rounded-xl bg-white/15 px-4 py-2.5 text-sm font-medium text-white ring-1 ring-white/30 backdrop-blur transition hover:bg-white/25"><CalendarDays size={15} />Book appointment</Link>}
+              {can("queue:view") && <Link href="/queue" className="inline-flex items-center gap-1.5 rounded-xl bg-white/15 px-4 py-2.5 text-sm font-medium text-white ring-1 ring-white/30 backdrop-blur transition hover:bg-white/25"><ListOrdered size={15} />Open queue</Link>}
+            </div>
+          </div>
+          {exec && (
+            <div className="float hidden w-64 rounded-2xl bg-white p-4 text-[#0b3558] shadow-2xl lg:block">
+              <div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-xl bg-[#e1eff7] text-[#0a7ba5]"><Banknote size={18} /></span><div><div className="text-xl font-semibold tabular-nums">{aed(exec.current.revenue)}</div><div className="text-xs text-[#5f7488]">Revenue this period</div></div></div>
+              {exec.delta.revenue.pct !== null && <div className={`mt-2 text-xs font-semibold ${exec.delta.revenue.pct >= 0 ? "text-[#0f8a5f]" : "text-[#c23a2b]"}`}>{exec.delta.revenue.pct >= 0 ? "+" : "−"}{Math.abs(exec.delta.revenue.pct).toFixed(1)}% vs previous period</div>}
+              <svg viewBox="0 0 200 50" className="mt-2 w-full" aria-hidden><defs><linearGradient id="hw" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#0a7ba5" stopOpacity=".45" /><stop offset="1" stopColor="#0a7ba5" stopOpacity="0" /></linearGradient></defs>
+                <path className="ring-draw" d="M0 34 C25 20 40 38 65 26 S110 8 135 22 S175 34 200 12" fill="none" stroke="#0a7ba5" strokeWidth="2.5" strokeLinecap="round" />
+                <path d="M0 34 C25 20 40 38 65 26 S110 8 135 22 S175 34 200 12 L200 50 L0 50Z" fill="url(#hw)" /></svg>
+            </div>
+          )}
         </div>
-      </div>
+      </section>
 
       <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-5">
-          <section aria-label="Overview" className="stagger grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {patientCount !== null && <Stat label="Total patients" icon={<Users size={16} />} value={patientCount.toLocaleString("en-AE")} hint={exec ? `${exec.current.newPatients} new this period` : "Registered"} />}
-            {week && <Stat label="Appointments" icon={<CalendarDays size={16} />} value={week.thisWeek} trend={{ pct: week.pct }} hint={reception ? `${reception.todaysAppointments} today · ${reception.patientsWaiting} waiting` : "Last 7 days"} />}
+          <section aria-label="Overview" className="kpi-row stagger grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {patientCount !== null && <Stat label="Total patients" spark={week ? week.days.map((d) => d.previous + d.value) : undefined} icon={<Users size={16} />} value={patientCount.toLocaleString("en-AE")} hint={exec ? `${exec.current.newPatients} new this period` : "Registered"} />}
+            {week && <Stat label="Appointments" spark={week ? week.days.map((d) => d.value) : undefined} icon={<CalendarDays size={16} />} value={week.thisWeek} trend={{ pct: week.pct }} hint={reception ? `${reception.todaysAppointments} today · ${reception.patientsWaiting} waiting` : "Last 7 days"} />}
             {exec && <Stat label="Revenue" icon={<Banknote size={16} />} value={aed(exec.current.revenue)} trend={{ pct: exec.delta.revenue.pct }} hint={`Net profit ${aed(exec.current.netProfit)}`} />}
             {exec ? <Stat label="Receivables" icon={<Activity size={16} />} value={aed(exec.current.outstandingReceivables)} hint={`No-show ${(exec.current.noShowRate * 100).toFixed(1)}% · wait ${exec.current.avgWaitMinutes.toFixed(0)} min`} />
               : accounts ? <Stat label="Daily sales" icon={<Activity size={16} />} value={aed(accounts.dailySales)} hint={`Open invoices ${accounts.outstandingInvoices}`} /> : null}

@@ -12,11 +12,11 @@ export function PairBars({ days }: { days: { label: string; value: number; previ
       <div className="flex h-56 flex-col justify-between pb-6 text-end text-[11px] tabular-nums text-muted">{ticks.map((t) => <span key={t}>{Math.round(t)}</span>)}</div>
       <div className="relative flex h-56 flex-1 items-end justify-around gap-2">
         <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-6 top-0 flex flex-col justify-between">{ticks.map((t) => <div key={t} className="border-t border-dashed border-border" />)}</div>
-        {days.map((d) => (
+        {days.map((d, i) => (
           <div key={d.label} className="group relative z-10 flex h-full flex-1 flex-col items-center justify-end">
             <div className="flex h-[calc(100%-24px)] items-end gap-1">
-              <div className="bar-fill w-3 rounded-t-md transition-[height] duration-700 sm:w-3.5" style={{ height: h(d.value) }} title={`${d.label}: ${d.value} this week`} />
-              <div className="bar-prev w-3 rounded-t-md transition-[height] duration-700 sm:w-3.5" style={{ height: h(d.previous) }} title={`${d.label}: ${d.previous} last week`} />
+              <div className="bar-fill w-3 rounded-t-md transition-[height] duration-700 sm:w-3.5" style={{ height: h(d.value), animationDelay: `${i * 70}ms` }} title={`${d.label}: ${d.value} this week`} />
+              <div className="bar-prev w-3 rounded-t-md transition-[height] duration-700 sm:w-3.5" style={{ height: h(d.previous), animationDelay: `${i * 70 + 40}ms` }} title={`${d.label}: ${d.previous} last week`} />
             </div>
             <span className={`mt-1.5 text-xs ${d.today ? "font-semibold text-primary" : "text-muted"}`}>{d.label}</span>
           </div>
@@ -37,7 +37,7 @@ export function RingTotal({ parts, total, caption }: { parts: { label: string; v
       <div className="relative mx-auto size-44">
         <svg viewBox="0 0 100 100" className="size-full -rotate-90" role="img" aria-label={parts.map((p) => `${p.label} ${p.value}`).join(", ")}>
           <circle cx="50" cy="50" r={R} fill="none" stroke="var(--surface-2)" strokeWidth="13" />
-          {sum > 0 && parts.map((p, i) => { const len = (p.value / sum) * C; const el = <circle key={p.label} cx="50" cy="50" r={R} fill="none" stroke={RING[i % RING.length]} strokeWidth="13" strokeDasharray={`${Math.max(0, len - 1)} ${C}`} strokeDashoffset={-start} />; start += len; return el; })}
+          {sum > 0 && parts.map((p, i) => { const len = (p.value / sum) * C; const el = <circle key={p.label} cx="50" cy="50" r={R} fill="none" stroke={RING[i % RING.length]} strokeWidth="13" strokeDasharray={`${Math.max(0, len - 1)} ${C}`} strokeDashoffset={-start} className="ring-draw" style={{ animationDelay: `${i * 200}ms` }} />; start += len; return el; })}
         </svg>
         <div className="absolute inset-0 grid place-items-center text-center"><div><div className="text-xs text-muted">Overall</div><div className="text-2xl font-semibold tabular-nums">{total}</div><div className="text-[11px] text-muted">{caption}</div></div></div>
       </div>

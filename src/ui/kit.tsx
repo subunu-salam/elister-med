@@ -3,6 +3,7 @@ import { clsx } from "clsx";
 import { AlertTriangle, CheckCircle2, Info, Lock, TrendingDown, TrendingUp } from "lucide-react";
 import { RouteIcon } from "@/ui/shell/RouteIcon";
 import { Slide } from "@/ui/Slide";
+import { CountUp } from "@/ui/CountUp";
 
 export const cn = clsx;
 
@@ -21,17 +22,18 @@ export function Card({ title, action, children, className, flush, id, sub }: { i
 }
 
 /** KPI tile: icon and label, the figure with a coloured change chip, and a footnote. */
-export function Stat({ label, value, hint, tone, icon, trend }: { label: string; value: ReactNode; hint?: ReactNode; tone?: "ok" | "warn" | "danger"; icon?: ReactNode; trend?: { pct: number | null; goodWhen?: "up" | "down" } }) {
+export function Stat({ label, value, hint, tone, icon, trend, spark }: { label: string; value: ReactNode; hint?: ReactNode; tone?: "ok" | "warn" | "danger"; icon?: ReactNode; trend?: { pct: number | null; goodWhen?: "up" | "down" }; spark?: number[] }) {
   const t = trend && trend.pct !== null ? trend : null;
   const good = t ? (t.goodWhen === "down" ? t.pct! <= 0 : t.pct! >= 0) : true;
   return (
-    <div className="stat-tile panel panel-hover rounded-2xl p-4">
+    <div className="stat-tile panel panel-hover group rounded-2xl p-4">
       <div className="flex items-center gap-2.5">
-        {icon && <span className="ring-icon size-8 shrink-0">{icon}</span>}
+        {icon && <span className="ring-icon size-9 shrink-0 transition-transform duration-300 group-hover:scale-110">{icon}</span>}
         <div className="min-w-0 flex-1 truncate text-[13px] font-medium text-muted">{label}</div>
+        {spark && spark.length > 1 && <span aria-hidden className="spark">{spark.map((v, i) => <i key={i} style={{ height: `${Math.max(12, (v / Math.max(...spark, 1)) * 100)}%`, animationDelay: `${i * 60}ms` }} />)}</span>}
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-x-2.5 gap-y-1">
-        <div className={cn("text-[26px] font-semibold leading-tight tracking-tight tabular-nums", tone === "ok" && "text-ok", tone === "warn" && "text-warn", tone === "danger" && "text-danger")}>{value}</div>
+        <div className={cn("text-[26px] font-semibold leading-tight tracking-tight tabular-nums", tone === "ok" && "text-ok", tone === "warn" && "text-warn", tone === "danger" && "text-danger")}>{typeof value === "string" || typeof value === "number" ? <CountUp text={String(value)} /> : value}</div>
         {t && <span className={cn("trend-chip", good ? "trend-up" : "trend-down")}>{t.pct! >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}{t.pct! >= 0 ? "+" : "−"}{Math.abs(t.pct!).toFixed(1)}%</span>}
       </div>
       {hint && <div className="mt-1.5 text-xs text-muted">{hint}</div>}

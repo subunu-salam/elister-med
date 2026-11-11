@@ -7,6 +7,8 @@ import { Bell, ChevronDown, ChevronRight, Command, Languages, LogOut, Menu, Moon
 import { cn } from "@/ui/kit";
 import { ICONS, type IconKey } from "@/ui/shell/icons";
 import { ChatDock } from "@/ui/shell/ChatDock";
+import { Backdrop } from "@/ui/shell/Backdrop";
+import { Spotlight } from "@/ui/shell/Spotlight";
 
 type Item = { href: string; label: string; icon: IconKey };
 
@@ -121,6 +123,7 @@ export function Shell({
 
   return (
     <div dir={dir} lang={locale} className="flex min-h-screen">
+      <Backdrop /><Spotlight />
       <div aria-hidden className={cn("no-print pointer-events-none fixed inset-x-0 top-0 z-[60] h-[3px] origin-left brand-grad transition-opacity duration-300", busy ? "nav-bar opacity-100" : "opacity-0")} />
 
       <aside data-collapsed={collapsed} className="sidebar no-print sticky top-0 hidden h-screen shrink-0 flex-col md:flex">{nav(collapsed)}</aside>

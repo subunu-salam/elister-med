@@ -29,11 +29,11 @@
   --ink: #0b3558;
   --btn-bg: #0b3558;
   --btn-fg: #ffffff;
-  --rail: #ffffff;
+  --rail: rgba(255, 255, 255, 0.82);
   --rail-fg: #5b7489;
   --brand-tint: #e1eff7;
 
-  --glass: #ffffff;
+  --glass: rgba(255, 255, 255, 0.78);
   --glass-edge: var(--border);
   --shadow-card: 0 1px 2px rgba(16, 40, 64, 0.04);
   --shadow-pop: 0 2px 6px rgba(11, 53, 88, 0.08), 0 32px 64px -26px rgba(11, 53, 88, 0.42);
@@ -69,11 +69,11 @@
   --ink: #e8f1f7;
   --btn-bg: #e8f1f7;
   --btn-fg: #0b3558;
-  --rail: #0b1b2b;
+  --rail: rgba(11, 27, 43, 0.85);
   --rail-fg: #95aec1;
   --brand-tint: #15364d;
 
-  --glass: #0e2032;
+  --glass: rgba(14, 32, 50, 0.72);
   --glass-edge: var(--border);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 16px 36px -20px rgba(0, 0, 0, 0.7);
   --shadow-pop: 0 2px 4px rgba(0, 0, 0, 0.5), 0 30px 60px -24px rgba(0, 0, 0, 0.8);
@@ -136,9 +136,19 @@ body { background-color: var(--bg); background-image: var(--canvas); background-
 .hairline { box-shadow: inset 0 -1px 0 var(--border); }
 
 /* surfaces: frosted white tiles with a bright top edge; `.glass` and `.panel` kept as names so every older page picks the look up */
-.panel, .glass, .glass-strong { background: var(--glass); border: 1px solid var(--border); box-shadow: var(--shadow-card); }
-.panel-hover { transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s; }
-.panel-hover:hover { border-color: color-mix(in srgb, var(--primary) 35%, var(--border)); box-shadow: 0 8px 22px -14px rgba(11, 53, 88, 0.35); }
+.panel, .glass, .glass-strong {
+  position: relative; isolation: isolate; background: var(--glass); border: 1px solid color-mix(in srgb, #fff 65%, var(--border));
+  -webkit-backdrop-filter: blur(14px) saturate(160%); backdrop-filter: blur(14px) saturate(160%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 1px 2px rgba(16, 40, 64, 0.04), 0 18px 40px -28px rgba(11, 53, 88, 0.35);
+}
+.dark .panel, .dark .glass, .dark .glass-strong { border-color: rgba(255, 255, 255, 0.07); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 18px 40px -26px rgba(0, 0, 0, 0.8); }
+/* cursor spotlight on the border (pointer position from Spotlight.tsx) */
+.panel::before { content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; pointer-events: none; opacity: 0; transition: opacity 0.3s;
+  background: radial-gradient(220px circle at var(--mx, 50%) var(--my, 50%), color-mix(in srgb, var(--accent) 85%, transparent), transparent 70%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+.panel:hover::before { opacity: 1; }
+.panel-hover { transition: transform 0.35s cubic-bezier(0.2, 0.7, 0.2, 1), box-shadow 0.35s; }
+.panel-hover:hover { transform: translateY(-4px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 26px 50px -24px rgba(11, 53, 88, 0.45); }
 
 .panel.stat-tile { --tile: var(--glass); background: var(--tile); }
 
@@ -186,3 +196,57 @@ body { background-color: var(--bg); background-image: var(--canvas); background-
 
 @media (prefers-contrast: more) { .panel, .glass { box-shadow: 0 0 0 1px var(--fg); } }
 @media print { .no-print { display: none !important; } body { background: #fff; color: #000; } .panel, .glass { box-shadow: none; background: #fff; } }
+
+/* ---------- v8 premium motion layer ---------- */
+.backdrop { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.orb { position: absolute; border-radius: 9999px; filter: blur(60px); opacity: 0.55; will-change: transform; }
+.orb-a { width: 46vmax; height: 46vmax; left: -14vmax; top: -16vmax; background: radial-gradient(circle, rgba(10, 123, 165, 0.35), transparent 65%); animation: drift-a 26s ease-in-out infinite alternate; }
+.orb-b { width: 40vmax; height: 40vmax; right: -12vmax; top: 10vh; background: radial-gradient(circle, rgba(0, 160, 160, 0.32), transparent 65%); animation: drift-b 32s ease-in-out infinite alternate; }
+.orb-c { width: 34vmax; height: 34vmax; left: 30vw; bottom: -18vmax; background: radial-gradient(circle, rgba(40, 196, 224, 0.28), transparent 65%); animation: drift-a 38s ease-in-out infinite alternate-reverse; }
+.dark .orb { opacity: 0.4; }
+@keyframes drift-a { to { transform: translate3d(8vmax, 6vmax, 0) scale(1.12); } }
+@keyframes drift-b { to { transform: translate3d(-7vmax, 8vmax, 0) scale(0.92); } }
+
+/* sidebar: glowing active item with a sheen, icons nudge on hover */
+.sidebar { -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%); }
+.sb-item svg { transition: transform 0.25s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.sb-item:hover svg { transform: translateX(2px) scale(1.08); }
+.sb-item[aria-current="page"] { position: relative; overflow: hidden; background: linear-gradient(135deg, #0b3558 0%, #0a7ba5 70%, #00a0a0 140%); color: #fff; box-shadow: 0 10px 22px -10px rgba(10, 123, 165, 0.9); }
+.sb-item[aria-current="page"]::after { content: ""; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.28) 50%, transparent 70%); transform: translateX(-120%); animation: sheen 3.6s ease-in-out infinite; }
+@keyframes sheen { 0%, 55% { transform: translateX(-120%); } 85%, 100% { transform: translateX(120%); } }
+
+/* primary buttons: gradient with a sweep on hover */
+.btn-gloss { position: relative; overflow: hidden; background: linear-gradient(135deg, #0b3558 0%, #0a7ba5 100%); color: #fff; box-shadow: 0 10px 22px -12px rgba(10, 123, 165, 0.9); transition: transform 0.2s, box-shadow 0.2s; }
+.dark .btn-gloss { background: linear-gradient(135deg, #4cb6d8 0%, #2fd0c8 100%); color: #04222c; }
+.btn-gloss::after { content: ""; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 35%, rgba(255, 255, 255, 0.35) 50%, transparent 65%); transform: translateX(-120%); transition: transform 0.6s; }
+.btn-gloss:hover { transform: translateY(-1px); filter: none; box-shadow: 0 16px 28px -12px rgba(10, 123, 165, 0.95); }
+.btn-gloss:hover::after { transform: translateX(120%); }
+
+/* coloured KPI tiles (cycled), like the reference cards */
+.kpi-row > :nth-child(4n + 1) { --kpi: #0a7ba5; } .kpi-row > :nth-child(4n + 2) { --kpi: #00a0a0; }
+.kpi-row > :nth-child(4n + 3) { --kpi: #6d5bd0; } .kpi-row > :nth-child(4n + 4) { --kpi: #e08a2c; }
+.kpi-row .stat-tile { background: linear-gradient(160deg, color-mix(in srgb, var(--kpi, var(--primary)) 14%, var(--glass)) 0%, var(--glass) 60%); }
+.kpi-row .ring-icon { background: var(--kpi, var(--primary)); color: #fff; box-shadow: 0 8px 16px -8px var(--kpi, var(--primary)); }
+.spark { display: flex; align-items: flex-end; gap: 3px; height: 30px; }
+.spark i { width: 4px; border-radius: 3px; background: var(--kpi, var(--primary)); opacity: 0.85; transform-origin: bottom; animation: grow 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+
+/* charts draw in */
+@keyframes grow { from { transform: scaleY(0); } to { transform: none; } }
+.bar-fill, .bar-prev { transform-origin: bottom; animation: grow 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+@keyframes draw { from { stroke-dasharray: 0 999; } }
+.ring-draw { animation: draw 1.2s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+.float { animation: float 6s ease-in-out infinite; }
+
+/* greeting hero */
+.hero-banner { position: relative; overflow: hidden; color: #fff; background:
+  radial-gradient(60% 120% at 100% 0%, rgba(0, 160, 160, 0.85), transparent 60%),
+  radial-gradient(50% 120% at 0% 100%, rgba(40, 196, 224, 0.5), transparent 60%),
+  linear-gradient(120deg, #0b3558 0%, #0a5f8c 55%, #0a7ba5 100%); box-shadow: 0 28px 60px -30px rgba(11, 53, 88, 0.8); }
+.hero-banner .rings { position: absolute; inset-inline-end: -60px; top: -60px; width: 320px; height: 320px; border-radius: 9999px; border: 1px solid rgba(255, 255, 255, 0.18); box-shadow: 0 0 0 40px rgba(255, 255, 255, 0.05), 0 0 0 80px rgba(255, 255, 255, 0.035); animation: spin 60s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* staggered entrance for more children */
+.stagger > *:nth-child(7) { animation-delay: 280ms; } .stagger > *:nth-child(8) { animation-delay: 320ms; }
+main .page-in, main > div > section, main > div > div { animation: rise 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+tbody > tr { transition: background-color 0.15s; }
