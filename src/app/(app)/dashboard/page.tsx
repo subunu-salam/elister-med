@@ -9,16 +9,36 @@ import { executiveDashboard } from "@/modules/dashboard/executive";
 import { receptionDashboard } from "@/modules/dashboard/reception";
 import { doctorDashboard } from "@/modules/dashboard/doctor";
 import { accountsDashboard } from "@/modules/dashboard/accounts";
-import { BRAND } from "@/ui/brand";
 import { DoctorCard } from "@/ui/DoctorCard";
 import { listDoctors } from "@/modules/appointments/service";
 import { photoVersions } from "@/modules/people/photos";
 import { dubaiParts } from "@/core/time";
 import { Badge, Button, Card, Donut, Input, PageHeader, Stat, aed } from "@/ui/kit";
+import { tenantCol } from "@/core/db";
+import { HalfGauge, WeekBars } from "@/ui/dashboard/charts";
+import type { Ctx } from "@/core/rbac/authorize";
+
+const DAY = 86400000;
+/** Appointments per Dubai day for the last 7 days, with the same weekday a week earlier for comparison. */
+async function weekActivity(ctx: Ctx) {
+  const now = new Date();
+  const dubaiMidnight = (d: Date) => { const l = new Date(d.getTime() + 4 * 3600000); return new Date(Date.UTC(l.getUTCFullYear(), l.getUTCMonth(), l.getUTCDate()) - 4 * 3600000); };
+  const end = new Date(dubaiMidnight(now).getTime() + DAY), start = new Date(end.getTime() - 14 * DAY);
+  const rows = await tenantCol(ctx.orgId, "appointments").aggregate<{ _id: string; n: number }>([
+    { $match: { start: { $gte: start, $lt: end }, status: { $nin: ["cancelled"] } } },
+    { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$start", timezone: "+04:00" } }, n: { $sum: 1 } } },
+  ]);
+  const by = new Map(rows.map((r) => [r._id, r.n]));
+  const key = (d: Date) => new Date(d.getTime() + 4 * 3600000).toISOString().slice(0, 10);
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(end.getTime() - (7 - i) * DAY);
+    return { label: d.toLocaleDateString("en-GB", { timeZone: "Asia/Dubai", weekday: "short" }), value: by.get(key(d)) ?? 0, previous: by.get(key(new Date(d.getTime() - 7 * DAY))) ?? 0, today: i === 6 };
+  });
+  const thisWeek = days.reduce((a, d) => a + d.value, 0), lastWeek = days.reduce((a, d) => a + d.previous, 0);
+  return { days, thisWeek, pct: lastWeek ? ((thisWeek - lastWeek) / lastWeek) * 100 : null };
+}
 
 type SP = Promise<{ from?: string; to?: string }>;
-const dubaiDate = () => new Date().toLocaleDateString("en-GB", { timeZone: "Asia/Dubai", weekday: "long", day: "numeric", month: "long", year: "numeric" });
-const greeting = () => { const h = Number(new Date().toLocaleString("en-GB", { timeZone: "Asia/Dubai", hour: "2-digit", hour12: false })); return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"; };
 
 export default async function DashboardPage({ searchParams }: { searchParams: SP }) {
   const ctx = await requireCtx();
@@ -29,12 +49,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
   const can = (p: string) => ctx.permissions.includes(p as never);
 
   /* Independent widgets load side by side, not one after another. */
-  const [exec, reception, doctor, accounts, doctors] = await Promise.all([
+  const [exec, reception, doctor, accounts, doctors, week, patientCount] = await Promise.all([
     can("reports:view") && show("executive") ? executiveDashboard(ctx, { from, to }) : null,
     can("appointments:view") && can("queue:view") && show("reception") ? receptionDashboard(ctx, { day: new Date() }) : null,
     ctx.roles.includes("doctor") && show("doctor") ? doctorDashboard(ctx, { day: new Date() }).catch(() => null) : null,
     can("ledger:view") && show("accounts") ? accountsDashboard(ctx, { day: new Date() }) : null,
     can("appointments:view") ? listDoctors(ctx) : [],
+    can("appointments:view") ? weekActivity(ctx) : null,
+    can("patients:view") ? tenantCol(ctx.orgId, "patients").count({} as never) : null,
   ]);
 
   const photos = await photoVersions(ctx.orgId, doctors.map((d) => d.userId ?? d._id));
@@ -51,25 +73,48 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
     can("reports:view") && { href: "/finance", label: "Finance", icon: Landmark },
     can("ledger:view") && { href: "/accounts", label: "Accounts", icon: BookOpen },
   ].filter(Boolean) as { href: string; label: string; icon: typeof Users }[]).slice(0, 10);
-  const firstName = ctx.name.replace(/\(.*?\)/g, "").trim().split(" ")[0];
   const topDoctors = exec ? exec.current.revenueByDoctor.slice(0, 6) : [];
   const topMax = Math.max(...topDoctors.map((r) => Number(r.amount)), 1);
 
   return (
     <div className="space-y-8">
-      <header className="page-in">
-        <p className="text-sm text-muted">{dubaiDate()}</p>
-        <h1 className="mt-1 text-[40px] font-light leading-[1.08] tracking-tight md:text-[56px]">{greeting()}, {firstName}</h1>
-        <p className="mt-2 max-w-xl text-sm text-muted">{BRAND.tagline}.</p>
-      </header>
+      <section aria-label="Overview" className="stagger grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {patientCount !== null && <Stat label="Total patients" icon={<Users size={18} />} value={patientCount.toLocaleString("en-AE")} hint={exec ? <span>New <b className="text-fg">{exec.current.newPatients}</b> · Returning <b className="text-fg">{exec.current.returningPatients}</b> this period</span> : "Registered patients"} />}
+        {week && <Stat label="Appointments this week" icon={<CalendarDays size={18} />} value={week.thisWeek} trend={{ pct: week.pct }} hint={reception ? <span>Today <b className="text-fg">{reception.todaysAppointments}</b> · Waiting <b className="text-fg">{reception.patientsWaiting}</b></span> : undefined} />}
+        {exec && <Stat label="Revenue" icon={<Banknote size={18} />} value={aed(exec.current.revenue)} trend={{ pct: exec.delta.revenue.pct }} hint={`Net profit ${aed(exec.current.netProfit)}`} />}
+        {exec ? <Stat label="Outstanding receivables" icon={<Activity size={18} />} value={aed(exec.current.outstandingReceivables)} hint={`No-show rate ${(exec.current.noShowRate * 100).toFixed(1)}% · Avg wait ${exec.current.avgWaitMinutes.toFixed(0)} min`} />
+          : accounts ? <Stat label="Daily sales" icon={<Activity size={18} />} value={aed(accounts.dailySales)} hint={`Open invoices ${accounts.outstandingInvoices}`} /> : null}
+      </section>
+
+      {(week || exec) && (
+        <section className="grid gap-4 xl:grid-cols-3">
+          {week && (
+            <Card className="xl:col-span-2" title="Analytics" sub="Appointments per day, this week against the same day last week"
+              action={<span className="trend-chip text-primary"><CalendarDays size={12} /> Last 7 days</span>}>
+              <div className="mb-4 flex items-baseline gap-3"><span className="text-[34px] font-semibold leading-none tabular-nums">{week.thisWeek}</span>{week.pct !== null && <span className="trend-chip text-primary">{week.pct >= 0 ? "↗" : "↘"} {Math.abs(week.pct).toFixed(1)}% <span className="font-normal text-muted">vs previous week</span></span>}</div>
+              <WeekBars days={week.days} />
+              <div className="mt-3 flex flex-wrap gap-4 text-xs text-muted"><span className="flex items-center gap-1.5"><span className="bar-fill inline-block size-3 rounded" />This week</span><span className="flex items-center gap-1.5"><span className="bar-hatch inline-block size-3 rounded" />Same day last week</span></div>
+            </Card>
+          )}
+          {exec && (
+            <Card title="Patients" sub="New and returning in the selected period">
+              <HalfGauge a={{ label: "New", value: exec.current.newPatients }} b={{ label: "Returning", value: exec.current.returningPatients }} sub="Seen this period" centre={(exec.current.newPatients + exec.current.returningPatients).toLocaleString("en-AE")} />
+              <dl className="mt-5 grid grid-cols-2 gap-3 text-sm">
+                <div className="rounded-2xl bg-surface-2 p-3"><dt className="text-xs text-muted">Appointments</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{exec.current.appointments}</dd></div>
+                <div className="rounded-2xl bg-surface-2 p-3"><dt className="text-xs text-muted">No-show rate</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{(exec.current.noShowRate * 100).toFixed(1)}%</dd></div>
+              </dl>
+            </Card>
+          )}
+        </section>
+      )}
 
       {launch.length > 0 && (
         <section aria-label="Quick start" className="space-y-3">
-          <h2 className="text-[22px] font-light tracking-tight">What do you need?</h2>
+          <h2 className="text-[19px] font-semibold tracking-tight">Quick actions</h2>
           <div className="stagger grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             {launch.map((q) => (
-              <Link key={q.href} href={q.href} className={`group flex items-center gap-3 rounded-[28px] p-4 transition-transform duration-300 hover:-translate-y-0.5 bg-surface shadow-card`}>
-                <span className="grid size-12 shrink-0 place-items-center rounded-full bg-tint text-primary transition-transform duration-300 group-hover:scale-105"><q.icon size={20} strokeWidth={1.6} /></span>
+              <Link key={q.href} href={q.href} className="panel panel-hover group flex items-center gap-3 rounded-[26px] p-4">
+                <span className="ring-icon size-12 shrink-0 transition-transform duration-300 group-hover:scale-105"><q.icon size={20} strokeWidth={1.7} /></span>
                 <span className="text-sm font-medium leading-tight">{q.label}</span>
               </Link>
             ))}
@@ -79,7 +124,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
 
       {doctors.length > 0 && (
         <section aria-label="Doctors" className="space-y-3">
-          <h2 className="text-[22px] font-light tracking-tight">Our doctors</h2>
+          <h2 className="text-[19px] font-semibold tracking-tight">Our doctors</h2>
           <div className="-mx-1 flex snap-x gap-3 overflow-x-auto px-1 pb-2">
             {doctors.map((d) => <DoctorCard key={d._id} doctor={d} today={todayDow} photo={photos.get(d.userId ?? d._id)} canEditPhoto={can("hr:update")} bookHref={can("appointments:create") ? "/appointments#book" : undefined} />)}
           </div>
@@ -122,7 +167,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
 
       {reception && (
         <section aria-label="Reception" className="space-y-3">
-          <h2 className="text-[22px] font-light tracking-tight">Reception today</h2>
+          <h2 className="text-[19px] font-semibold tracking-tight">Reception today</h2>
           <div className="stagger grid grid-cols-2 gap-3 lg:grid-cols-5">
             <Stat label="Appointments" icon={<CalendarDays size={16} />} value={reception.todaysAppointments} />
             <Stat label="Expected arrivals" icon={<UserPlus size={16} />} value={reception.expectedArrivals} />
@@ -135,7 +180,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
 
       {doctor && (
         <section aria-label="Doctor" className="space-y-3">
-          <h2 className="text-[22px] font-light tracking-tight">My day</h2>
+          <h2 className="text-[19px] font-semibold tracking-tight">My day</h2>
           <div className="stagger grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Stat label="Consultations" icon={<Stethoscope size={16} />} value={doctor.todaysConsultations} />
             <Stat label="Waiting" icon={<Clock size={16} />} value={doctor.waitingPatients} />
@@ -147,7 +192,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: SP
 
       {accounts && (
         <section aria-label="Accounts" className="space-y-3">
-          <h2 className="text-[22px] font-light tracking-tight">Finance today</h2>
+          <h2 className="text-[19px] font-semibold tracking-tight">Finance today</h2>
           <div className="stagger grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Stat label="Cash collected" icon={<Banknote size={16} />} value={aed(accounts.cashCollected)} />
             <Stat label="Card collected" icon={<Wallet size={16} />} value={aed(accounts.cardCollected)} />

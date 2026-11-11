@@ -3,52 +3,63 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /*
- * Elister Med v5, "studio": a quiet light canvas, one dark floating rail, pastel bento tiles and a single teal gradient panel.
- * No page-wide blur or fixed scene layers, so every page paints at once on any device. Motion is limited to the rail indicator,
- * the tab underline and one staggered entrance per page. Earlier designs: tags design-v1-backup, design-v2-glass, design-v4-liquid-glass.
+ * Elister Med v6, "aurora": an airy blue canvas lit by two soft azure/teal glows, frosted white tiles with a bright top edge,
+ * a white floating icon rail with a navy halo for the active page, and the same three brand colours throughout.
+ * The glows are painted once on a fixed layer (no blur filters), so scrolling stays cheap. Earlier designs: tags design-v1..v5.
  */
 :root {
-  --bg: #e9eff3;
+  --bg: #e8f1f8;
   --surface: #ffffff;
-  --surface-2: #f2f6f9;
-  --border: #dde6ec;
-  --fg: #0e2236;
-  --muted: #5d7284;
+  --surface-2: #f1f6fb;
+  --border: #dbe6ef;
+  --fg: #0c2238;
+  --muted: #5f7488;
   --primary: #0a7ba5;
   --primary-strong: #0b3558;
   --primary-fg: #ffffff;
   --accent: #00a0a0;
   --teal: #00a0a0;
-  --ok: #107a52;
-  --warn: #a35505;
-  --danger: #bb3626;
-  --radius: 1rem;
+  --ok: #0f8a5f;
+  --warn: #b25f07;
+  --danger: #c23a2b;
+  --radius: 1.25rem;
 
-  /* Elister: navy #0b3558, azure #0a7ba5, teal #00a0a0 and nothing else */
+  /* Elister: navy #0b3558, azure #0a7ba5, teal #00a0a0 */
   --ink: #0b3558;
   --btn-bg: #0b3558;
   --btn-fg: #ffffff;
-  --rail: #0b3558;
-  --brand-tint: #dcedf3;
+  --rail: rgba(255, 255, 255, 0.78);
+  --rail-fg: #5b7489;
+  --brand-tint: #e1eff7;
 
-  --shadow-card: 0 1px 2px rgba(11, 53, 88, 0.05), 0 14px 34px -18px rgba(11, 53, 88, 0.2);
-  --shadow-pop: 0 2px 4px rgba(11, 53, 88, 0.08), 0 30px 60px -24px rgba(11, 53, 88, 0.4);
+  --glass: rgba(255, 255, 255, 0.74);
+  --glass-edge: rgba(255, 255, 255, 0.95);
+  --shadow-card: 0 1px 1px rgba(11, 53, 88, 0.04), 0 10px 28px -14px rgba(10, 80, 130, 0.22), 0 24px 48px -32px rgba(10, 123, 165, 0.25);
+  --shadow-pop: 0 2px 6px rgba(11, 53, 88, 0.08), 0 32px 64px -26px rgba(11, 53, 88, 0.42);
+  --glow-active: 0 10px 22px -8px rgba(11, 53, 88, 0.65), 0 0 0 6px rgba(10, 123, 165, 0.12);
 
   --grad-brand: linear-gradient(135deg, #0a7ba5 0%, #00a0a0 100%);
   --grad-accent: linear-gradient(90deg, #0a7ba5 0%, #00a0a0 100%);
+  --grad-bar: linear-gradient(180deg, #11b5d6 0%, #0a7ba5 55%, #0b3558 100%);
+  --grad-capsule: linear-gradient(180deg, #28c4e0 0%, #0a7ba5 55%, #0b3558 100%);
   --grad-hero:
     radial-gradient(60% 90% at 92% 0%, rgba(0, 160, 160, 0.75) 0%, transparent 62%),
     radial-gradient(70% 100% at 0% 100%, rgba(10, 123, 165, 0.7) 0%, transparent 60%),
     linear-gradient(135deg, #0b3558 0%, #0a5a82 100%);
+  --canvas:
+    radial-gradient(48% 42% at 88% -4%, rgba(0, 160, 160, 0.16) 0%, transparent 70%),
+    radial-gradient(42% 46% at 4% 8%, rgba(10, 123, 165, 0.16) 0%, transparent 70%),
+    radial-gradient(60% 50% at 60% 110%, rgba(40, 196, 224, 0.12) 0%, transparent 70%),
+    linear-gradient(180deg, #eef5fb 0%, #e5eff7 100%);
   --tint: rgba(10, 123, 165, 0.06);
 }
 .dark {
-  --bg: #07131f;
-  --surface: #0f2133;
-  --surface-2: #14293e;
-  --border: #1f3a52;
+  --bg: #06121e;
+  --surface: #0e2032;
+  --surface-2: #13283d;
+  --border: #1e3a53;
   --fg: #e8f1f7;
-  --muted: #94adc0;
+  --muted: #95aec1;
   --primary: #4cb6d8;
   --primary-strong: #e8f1f7;
   --primary-fg: #04222c;
@@ -61,11 +72,19 @@
   --ink: #e8f1f7;
   --btn-bg: #e8f1f7;
   --btn-fg: #0b3558;
-  --rail: #0c2a46;
-  --brand-tint: #16384f;
+  --rail: rgba(14, 32, 50, 0.82);
+  --rail-fg: #95aec1;
+  --brand-tint: #15364d;
 
+  --glass: rgba(14, 32, 50, 0.72);
+  --glass-edge: rgba(255, 255, 255, 0.07);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 16px 36px -20px rgba(0, 0, 0, 0.7);
   --shadow-pop: 0 2px 4px rgba(0, 0, 0, 0.5), 0 30px 60px -24px rgba(0, 0, 0, 0.8);
+  --glow-active: 0 10px 22px -8px rgba(76, 182, 216, 0.55), 0 0 0 6px rgba(76, 182, 216, 0.14);
+  --canvas:
+    radial-gradient(48% 42% at 88% -4%, rgba(47, 208, 200, 0.12) 0%, transparent 70%),
+    radial-gradient(42% 46% at 4% 8%, rgba(76, 182, 216, 0.12) 0%, transparent 70%),
+    linear-gradient(180deg, #071523 0%, #06111c 100%);
   --tint: rgba(76, 182, 216, 0.08);
 }
 
@@ -96,7 +115,7 @@
 html { color-scheme: light; scroll-behavior: smooth; }
 html.dark { color-scheme: dark; }
 html[dir="rtl"] body { font-family: var(--font-plex-arabic), var(--font-poppins), ui-sans-serif, system-ui, sans-serif; }
-body { background: var(--bg); color: var(--fg); font-size: 14px; line-height: 1.55; letter-spacing: -0.005em; -webkit-font-smoothing: antialiased; }
+body { background-color: var(--bg); background-image: var(--canvas); background-attachment: fixed; color: var(--fg); font-size: 14px; line-height: 1.55; letter-spacing: -0.005em; -webkit-font-smoothing: antialiased; }
 ::selection { background: color-mix(in srgb, var(--accent) 40%, transparent); }
 :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 10px; }
 
@@ -122,28 +141,45 @@ body { background: var(--bg); color: var(--fg); font-size: 14px; line-height: 1.
 .tint { background: var(--tint); }
 .hairline { box-shadow: inset 0 -1px 0 var(--border); }
 
-/* surfaces: flat tiles with one soft shadow; `.glass` and `.panel` kept as names so every older page picks the new look up */
-.panel, .glass, .glass-strong { background: var(--surface); box-shadow: var(--shadow-card); border: 0; }
-.panel-hover { transition: transform 0.25s cubic-bezier(0.2, 0.7, 0.2, 1), box-shadow 0.25s; }
-.panel-hover:hover { transform: translateY(-2px); box-shadow: var(--shadow-pop); }
+/* surfaces: frosted white tiles with a bright top edge; `.glass` and `.panel` kept as names so every older page picks the look up */
+.panel, .glass, .glass-strong {
+  background: var(--glass); border: 1px solid var(--glass-edge);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), var(--shadow-card);
+}
+.dark .panel, .dark .glass, .dark .glass-strong { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), var(--shadow-card); }
+.panel-hover { transition: transform 0.3s cubic-bezier(0.2, 0.7, 0.2, 1), box-shadow 0.3s; }
+.panel-hover:hover { transform: translateY(-3px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), var(--shadow-pop); }
 
-.panel.stat-tile { --tile: var(--surface); background: var(--tile); }
+.panel.stat-tile { --tile: var(--glass); background: var(--tile); }
+
+/* ringed icon used on stat tiles, like a small instrument dial */
+.ring-icon { display: grid; place-items: center; border-radius: 9999px; color: var(--primary); background: var(--surface); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--primary) 55%, transparent), 0 6px 14px -8px rgba(10, 123, 165, 0.6); }
+.trend-chip { display: inline-flex; align-items: center; gap: 4px; border-radius: 9999px; padding: 2px 9px; font-size: 11.5px; font-weight: 500; background: var(--surface); box-shadow: 0 0 0 1px var(--border); }
+
+/* chart helpers */
+.bar-fill { background: var(--grad-bar); box-shadow: 0 10px 18px -10px rgba(10, 123, 165, 0.8); }
+.bar-hatch { background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--primary) 38%, transparent) 0 1.5px, transparent 1.5px 7px); }
+.bar-dots { background-image: radial-gradient(color-mix(in srgb, var(--primary) 45%, transparent) 1.2px, transparent 1.4px); background-size: 7px 7px; }
 
 /* primary controls are ink pills (inverts in dark mode) */
-.btn-gloss { background: var(--btn-bg); color: var(--btn-fg); }
-.btn-gloss:hover { filter: brightness(1.25); }
+.btn-gloss { background: var(--btn-bg); color: var(--btn-fg); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 8px 18px -10px rgba(11, 53, 88, 0.8); }
+.btn-gloss:hover { filter: brightness(1.2); }
 .dark .btn-gloss:hover { filter: brightness(0.92); }
 
-/* the rail: one dark floating pill, collapsed to icons and opening over the page on hover or focus */
-.side-glass { background: var(--rail); }
-.rail { width: 68px; transition: width 0.32s cubic-bezier(0.2, 0.7, 0.2, 1), box-shadow 0.32s; }
-.rail:hover, .rail:focus-within { width: 232px; box-shadow: var(--shadow-pop); }
+/* the rail: a white floating capsule of icon circles, opening over the page on hover or focus */
+.side-glass { background: var(--rail); border: 1px solid var(--glass-edge); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), var(--shadow-card); color: var(--rail-fg); }
+.rail { width: 76px; transition: width 0.32s cubic-bezier(0.2, 0.7, 0.2, 1), box-shadow 0.32s; }
+.rail:hover, .rail:focus-within { width: 244px; box-shadow: var(--shadow-pop); }
 .rail .rail-label { opacity: 0; transform: translateX(-4px); transition: opacity 0.2s, transform 0.25s; white-space: nowrap; }
 .rail:hover .rail-label, .rail:focus-within .rail-label { opacity: 1; transform: none; transition-delay: 0.08s; }
 [dir="rtl"] .rail .rail-label { transform: translateX(4px); }
-.rail-dot { transition: top 0.55s cubic-bezier(0.65, 0.05, 0.2, 1), opacity 0.2s; }
+.rail-dot { transition: top 0.55s cubic-bezier(0.65, 0.05, 0.2, 1), opacity 0.2s; background: var(--btn-bg); box-shadow: var(--glow-active); }
 .rail-nav { scrollbar-width: none; }
 .rail-nav::-webkit-scrollbar { display: none; }
+.logo-capsule { background: var(--grad-capsule); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 14px 26px -12px rgba(10, 123, 165, 0.85); }
+
+/* top bar: frosted strip that the page scrolls under */
+.topbar { background: color-mix(in srgb, var(--bg) 70%, transparent); -webkit-backdrop-filter: blur(16px) saturate(150%); backdrop-filter: blur(16px) saturate(150%); }
 
 /* tabs: a small frosted-glass track (the one place blur is used) with an ink pill for the active tab, matching the command pill */
 .glass-tabs {

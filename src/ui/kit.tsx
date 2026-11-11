@@ -6,13 +6,13 @@ import { Slide } from "@/ui/Slide";
 
 export const cn = clsx;
 
-export function Card({ title, action, children, className, flush, id }: { id?: string; title?: ReactNode; action?: ReactNode; children: ReactNode; className?: string; flush?: boolean }) {
+export function Card({ title, action, children, className, flush, id, sub }: { id?: string; title?: ReactNode; sub?: ReactNode; action?: ReactNode; children: ReactNode; className?: string; flush?: boolean }) {
   return (
-    <section id={id} className={cn("panel overflow-hidden rounded-[28px]", className)}>
+    <section id={id} className={cn("panel overflow-hidden rounded-[30px]", className)}>
       {(title || action) && (
-        <header className="flex items-center justify-between gap-3 px-6 pt-5">
-          <h2 className="text-[17px] font-medium tracking-tight">{title}</h2>
-          {action}
+        <header className="flex items-start justify-between gap-3 px-6 pt-5">
+          <div className="min-w-0"><h2 className="text-[17px] font-semibold tracking-tight">{title}</h2>{sub && <p className="mt-0.5 text-xs text-muted">{sub}</p>}</div>
+          {action && <div className="shrink-0">{action}</div>}
         </header>
       )}
       <div className={flush ? "pt-3" : cn("px-6 pb-6", title || action ? "pt-4" : "pt-6")}>{children}</div>
@@ -20,30 +20,31 @@ export function Card({ title, action, children, className, flush, id }: { id?: s
   );
 }
 
+/** KPI tile: ringed icon and label on top, a large figure with its trend chip, and an optional footnote. */
 export function Stat({ label, value, hint, tone, icon, trend }: { label: string; value: ReactNode; hint?: ReactNode; tone?: "ok" | "warn" | "danger"; icon?: ReactNode; trend?: { pct: number | null; goodWhen?: "up" | "down" } }) {
   const t = trend && trend.pct !== null ? trend : null;
   const good = t ? (t.goodWhen === "down" ? t.pct! <= 0 : t.pct! >= 0) : true;
   return (
-    <div className="stat-tile panel panel-hover rounded-[28px] p-5">
-      <div className="flex items-start justify-between gap-2">
-        <div className="text-[13px] font-medium leading-snug text-fg/70">{label}</div>
-        {icon && <span className="grid size-9 shrink-0 place-items-center rounded-full bg-tint text-primary">{icon}</span>}
+    <div className="stat-tile panel panel-hover rounded-[30px] p-5">
+      <div className="flex items-center gap-3">
+        {icon && <span className="ring-icon size-11 shrink-0">{icon}</span>}
+        <div className="min-w-0 text-[14px] font-semibold leading-snug tracking-tight">{label}</div>
       </div>
-      <div className={cn("mt-5 text-[32px] font-light leading-none tracking-tight tabular-nums", tone === "ok" && "text-ok", tone === "warn" && "text-warn", tone === "danger" && "text-danger")}>{value}</div>
-      <div className="mt-3 flex min-h-5 flex-wrap items-center gap-2 text-xs text-fg/70">
-        {t && <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium", good ? "bg-surface-2 text-ok" : "bg-surface-2 text-danger")}>{t.pct! >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}{Math.abs(t.pct!).toFixed(1)}%</span>}
-        {hint}
+      <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className={cn("text-[30px] font-semibold leading-none tracking-tight tabular-nums", tone === "ok" && "text-ok", tone === "warn" && "text-warn", tone === "danger" && "text-danger")}>{value}</div>
+        {t && <span className={cn("trend-chip", good ? "text-primary" : "text-danger")}>{t.pct! >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}{Math.abs(t.pct!).toFixed(1)}%<span className="font-normal text-muted">vs last period</span></span>}
       </div>
+      {hint && <div className="mt-3 text-xs text-muted">{hint}</div>}
     </div>
   );
 }
 
 export function Badge({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "ok" | "warn" | "danger" | "info" }) {
   const t = { neutral: "bg-surface-2 text-muted", ok: "bg-ok/14 text-ok", warn: "bg-warn/16 text-warn", danger: "bg-danger/14 text-danger", info: "bg-primary/14 text-primary" }[tone];
-  return <span className={cn("inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium", t)}><span aria-hidden className="size-1.5 rounded-full bg-current opacity-80" />{children}</span>;
+  return <span className={cn("inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium", t)}><span aria-hidden className="size-1.5 rounded-full bg-current opacity-80 shadow-[0_0_0_3px_color-mix(in_srgb,currentColor_18%,transparent)]" />{children}</span>;
 }
 
-const field = "w-full rounded-2xl border border-border bg-surface px-4 py-2.5 text-sm text-fg transition placeholder:text-muted/70 hover:border-muted/50 focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/15 disabled:opacity-60";
+const field = "w-full rounded-2xl border border-border bg-surface/90 px-4 py-2.5 text-sm text-fg transition placeholder:text-muted/70 hover:border-muted/50 focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/15 disabled:opacity-60";
 export const Input = (p: InputHTMLAttributes<HTMLInputElement>) => <input {...p} className={cn(field, p.className)} />;
 export const Select = (p: SelectHTMLAttributes<HTMLSelectElement>) => <select {...p} className={cn(field, "pe-8", p.className)} />;
 export const Textarea = (p: TextareaHTMLAttributes<HTMLTextAreaElement>) => <textarea {...p} className={cn(field, "min-h-24", p.className)} />;
@@ -70,12 +71,12 @@ export function Button({ variant = "primary", className, ...p }: ButtonHTMLAttri
 
 export function Table({ head, children, empty }: { head: string[]; children: ReactNode; empty?: string }) {
   return (
-    <div className="overflow-x-auto rounded-3xl border border-border bg-surface">
+    <div className="overflow-x-auto rounded-[22px] border border-border bg-surface/90">
       <table className="w-full text-sm">
-        <thead>
+        <thead className="bg-surface-2/80">
           <tr className="text-start">
             {head.map((h) => (
-              <th key={h} className="whitespace-nowrap px-4 py-3.5 text-start text-xs font-medium text-muted">{h}</th>
+              <th key={h} className="whitespace-nowrap px-4 py-3 text-start text-[11px] font-semibold uppercase tracking-wider text-muted">{h}</th>
             ))}
           </tr>
         </thead>
@@ -101,10 +102,10 @@ export function PageHeader({ title, sub, actions, eyebrow }: { title: ReactNode;
   return (
     <div className="page-in mb-6 flex flex-wrap items-end justify-between gap-4">
       <div className="flex min-w-0 items-center gap-4">
-        <span aria-hidden className="hidden size-14 shrink-0 place-items-center rounded-full bg-tint text-primary sm:grid"><RouteIcon size={26} /></span>
+        <span aria-hidden className="ring-icon hidden size-14 shrink-0 sm:grid"><RouteIcon size={24} /></span>
         <div className="min-w-0">
           {eyebrow && <div className="mb-1 text-sm text-muted">{eyebrow}</div>}
-          <h1 className="text-[34px] font-light leading-[1.1] tracking-tight text-fg">{title}</h1>
+          <h1 className="text-[30px] font-semibold leading-[1.15] tracking-tight text-fg">{title}</h1>
           {sub && <p className="mt-2 max-w-3xl text-sm text-muted">{sub}</p>}
         </div>
       </div>
