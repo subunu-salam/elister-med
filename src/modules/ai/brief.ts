@@ -259,7 +259,7 @@ export async function askBrief(ctx: Ctx & { name?: string }, question: string, l
 // ---------------------------------------------------------------- the daily call
 
 /**
- * Hourly job (Vercel Cron). For every active member who can use the assistant and whose call time falls in this hour (Dubai), builds the
+ * Scheduled job (Vercel Cron). For every active member who can use the assistant and whose call time has passed today (Dubai), builds the
  * report with that member's own permissions, posts an in-app notification and rings their devices (web push). Each person is called at
  * most once a day.
  */
@@ -274,7 +274,8 @@ export async function placeDueCalls(now = new Date(), ring: (orgId: string, user
       const ctx = await loadCtx(m.userId);
       if (!ctx || !canBrief(ctx)) continue;
       const prefs = await getPrefs(ctx.orgId, ctx.userId);
-      if (!prefs.enabled || !prefs.days.includes(dow) || Number(prefs.callTime.slice(0, 2)) !== hour) continue;
+      // Due once the call time has passed today. Works with an hourly cron (rings within the hour) or a single daily one (rings everyone due so far).
+      if (!prefs.enabled || !prefs.days.includes(dow) || Number(prefs.callTime.slice(0, 2)) > hour) continue;
       const snap = await snaps(ctx.orgId).findOne({ _id: `${ctx.userId}:${ymd}` } as never);
       if (snap?.calledAt) continue;
       await callNow({ ...ctx, name: names.get(m.userId) ?? "" }, ring, now);
