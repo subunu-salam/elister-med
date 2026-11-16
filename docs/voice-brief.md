@@ -62,6 +62,6 @@ Only platform super admins and organisation admins can open it.
 - Speech uses the device's own voice unless the Gemini natural voice is switched on (`GEMINI_API_KEY` + `ELISTER_VOICE_EXTERNAL=1`).
 
 ## Setup (Vercel)
-1. `CRON_SECRET` = a long random string. The cron in `vercel.json` runs **hourly**, which needs Vercel Pro. On Hobby, call `/api/cron/daily-brief` hourly from any scheduler, with the header `Authorization: Bearer $CRON_SECRET`.
+1. `CRON_SECRET` = a long random string. On the Hobby plan the cron in `vercel.json` runs **once a day at 20:00 Dubai** and rings everyone whose call time has passed. For exact per-person times, run it hourly: switch the schedule to `0 * * * *` on Vercel Pro, or call `/api/cron/daily-brief` hourly from any scheduler, with the header `Authorization: Bearer $CRON_SECRET`.
 2. Run `npx tsx scripts/vapid-keys.ts` and set `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT`.
 3. Optional: `GEMINI_API_KEY` + `ELISTER_VOICE_EXTERNAL=1` for a natural Malayalam voice.
