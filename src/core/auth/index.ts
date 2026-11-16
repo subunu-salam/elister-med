@@ -10,12 +10,21 @@ import { restrictToModules } from "../rbac/modules";
 import { setCtxResolver, type Ctx } from "../rbac/authorize";
 import { applyDemoDefaults } from "../demo-env";
 
+/**
+ * Sites allowed to sign in: TRUSTED_ORIGINS, plus the deployment's own Vercel addresses (set by Vercel itself, never by a visitor),
+ * so preview links for branches and pull requests can sign in without editing settings for each one.
+ */
+function trustedOrigins(): string[] {
+  const own = [process.env.VERCEL_URL, process.env.VERCEL_BRANCH_URL, process.env.VERCEL_PROJECT_PRODUCTION_URL].filter(Boolean).map((h) => `https://${h}`);
+  return [...(process.env.TRUSTED_ORIGINS ?? "").split(",").map((x) => x.trim()).filter(Boolean), ...own];
+}
+
 function build() {
   applyDemoDefaults();
   return betterAuth({
     database: mongodbAdapter(getDbLazy()),
     secret: process.env.AUTH_SECRET,
-    trustedOrigins: (process.env.TRUSTED_ORIGINS ?? "").split(",").map((x) => x.trim()).filter(Boolean),
+    trustedOrigins: trustedOrigins(),
     emailAndPassword: { enabled: true, minPasswordLength: 12, autoSignIn: true },
     session: { expiresIn: 60 * 60 * 8, updateAge: 60 * 15, cookieCache: { enabled: false } },
     plugins: [twoFactor({ issuer: "Elister Med" }), nextCookies()],
