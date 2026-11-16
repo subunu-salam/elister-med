@@ -1,36 +1,53 @@
 /**
- * Owner's daily voice brief ("Elister Brief"): pure composition logic, no database and no I/O, so it is unit-tested directly.
- * brief.ts gathers the figures from the clinic's own data; this file turns them into a spoken brief in English or Malayalam,
+ * Personal AI assistant ("Elister Brief"): pure composition logic, no database and no I/O, so it is unit-tested directly.
+ * brief.ts gathers the figures from the clinic's own data; this file turns them into a spoken report in English or Malayalam,
  * works out what deserves the owner's attention, and answers follow-up questions from the same figures.
- * Every sentence is built from a figure in BriefFacts: nothing is invented, so the brief can always be traced back to the books.
+ * Every sentence is built from a figure in BriefFacts: nothing is invented, so the report can always be traced back to the books.
  */
 
 export type Lang = "en" | "ml";
 export const LANGS: Lang[] = ["en", "ml"];
 
+/** Chapters the owner can switch on or off ("which details do I want in my call"). Intro and the closing question are always there. */
+export const SECTION_KEYS = ["patients", "revenue", "receivables", "upcoming", "cash", "attention"] as const;
+export type SectionKey = (typeof SECTION_KEYS)[number];
+export const SECTION_LABEL: Record<SectionKey, { en: string; ml: string; needs: "clinical" | "finance" | "books" | "any"; hint: string }> = {
+  patients: { en: "Patients & appointments", ml: "രോഗികളും അപ്പോയിന്റ്മെന്റുകളും", needs: "clinical", hint: "Patients seen, new patients, no-shows, cancellations" },
+  revenue: { en: "Revenue & profit", ml: "വരുമാനവും ലാഭവും", needs: "finance", hint: "Revenue vs the day before and last week, month to date, net profit, top doctor" },
+  receivables: { en: "Receivables", ml: "കിട്ടാനുള്ള തുക", needs: "finance", hint: "Money still to collect, ageing, insurers and companies to chase" },
+  upcoming: { en: "Next day's schedule", ml: "അടുത്ത ദിവസത്തെ ബുക്കിംഗ്", needs: "clinical", hint: "Bookings for the next day against a normal day, first patient, busiest doctor" },
+  cash: { en: "Cash & financial health", ml: "ക്യാഷും സാമ്പത്തിക ആരോഗ്യവും", needs: "books", hint: "Bank balance, health score, runway" },
+  attention: { en: "Things needing attention", ml: "ശ്രദ്ധിക്കേണ്ടവ", needs: "any", hint: "Up to three alerts, most serious first, plus one piece of good news" },
+};
+
 export type BriefFacts = {
-  /** Dubai calendar date the brief is for (it reports on the day before). */
+  /** Dubai calendar date of the day being reported on, and its weekday (0 = Sunday). */
   ymd: string;
-  /** 0 = Sunday. */
   dow: number;
+  /** "today" for an end-of-day report (call after 3 pm), "yesterday" for a morning one. */
+  period: "today" | "yesterday";
+  /** Dubai hour the report was built, for the greeting. */
+  hour: number;
   recipient: string;
   org: string;
-  /** Yesterday. revenuePrev = the day before; revenueLastWeek = same weekday a week earlier. */
-  y: { appts: number; seen: number; newPatients: number; noShows: number; cancelled: number; revenue: number; revenuePrev: number | null; revenueLastWeek: number | null };
+  /** What this person's access lets the report talk about (set by the super admin's module access). */
+  scope: { clinical: boolean; finance: boolean };
+  day: { appts: number; seen: number; newPatients: number; noShows: number; cancelled: number; revenue: number; revenuePrev: number | null; revenueLastWeek: number | null };
   /** Month to date, compared with the same number of days of last month. */
   mtd: { revenue: number; revenuePrev: number | null; netProfit: number; appts: number; topDoctor?: { name: string; amount: number } };
-  /** Patient (billing) receivables aged by invoice date, plus corporate/insurer receivables from the books when visible. */
+  /** Patient (billing) receivables aged by invoice date, plus insurer/corporate receivables from the books when visible. */
   ar: { patient: number; over30: number; over90: number; trade: number; tradeOverdue: number; chase: { name: string; amount: number; days: number }[] };
-  today: { booked: number; expected: number | null; firstAt?: string; busiest?: { name: string; count: number }; tomorrow: number };
+  /** The next working day's book: "tomorrow" for an end-of-day report, "today" for a morning one. after = the day after that. */
+  next: { when: "today" | "tomorrow"; dow: number; booked: number; expected: number | null; firstAt?: string; busiest?: { name: string; count: number }; after: number };
   /** Present only for users who can see the books. */
   cash?: { balance: number; score: number; grade: string; runwayMonths: number | null; breachWeek: number | null; lowest: number; anomalies: number; duplicates: number; duplicateAmount: number };
 };
 
 export type AlertLevel = "critical" | "warn" | "good";
 export type BriefAlert = { key: string; level: AlertLevel; text: string; href: string };
-export type BriefSection = { key: "intro" | "patients" | "revenue" | "receivables" | "today" | "cash" | "attention" | "close"; title: string; text: string };
+export type BriefSection = { key: "intro" | SectionKey | "close"; title: string; text: string };
 export type Kpi = { key: string; label: string; value: string; deltaPct: number | null; goodWhen: "up" | "down" };
-export type Brief = { lang: Lang; ymd: string; title: string; sections: BriefSection[]; alerts: BriefAlert[]; kpis: Kpi[]; suggestions: string[]; text: string; words: number; seconds: number };
+export type Brief = { lang: Lang; ymd: string; period: BriefFacts["period"]; title: string; sections: BriefSection[]; alerts: BriefAlert[]; kpis: Kpi[]; suggestions: string[]; text: string; words: number; seconds: number };
 
 // ---------------------------------------------------------------- formatting
 
@@ -73,89 +90,113 @@ export function spokenDate(ymd: string, dow: number, lang: Lang): string {
   return lang === "ml" ? `${ML_DOW[dow]}, ${ML_MON[m - 1]} ${d}` : `${EN_DOW[dow]}, ${d} ${EN_MON[m - 1]}`;
 }
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+const greet = (hour: number, lang: Lang) => lang === "ml"
+  ? (hour < 12 ? "സുപ്രഭാതം" : hour < 17 ? "നമസ്കാരം" : "ശുഭസന്ധ്യ")
+  : (hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening");
+const firstName = (n: string) => n.replace(/\(.*?\)/g, "").trim().split(/\s+/).find((w) => w && !/^(dr|mr|mrs|ms|prof)\.?$/i.test(w)) ?? "";
+
+/** Which chapters this person may hear: their own choice, limited by what their access allows. */
+export function allowedSections(f: Pick<BriefFacts, "scope" | "cash">, chosen?: readonly SectionKey[]): SectionKey[] {
+  const ok = (k: SectionKey) => {
+    const n = SECTION_LABEL[k].needs;
+    return n === "any" || (n === "clinical" && f.scope.clinical) || (n === "finance" && f.scope.finance) || (n === "books" && !!f.cash);
+  };
+  return (chosen?.length ? chosen : SECTION_KEYS).filter(ok);
+}
 
 // ---------------------------------------------------------------- attention items
 
-/** What deserves the owner's attention today, most serious first. Thresholds are deliberately simple and explained in the text. */
+/** What deserves the owner's attention, most serious first. Thresholds are deliberately simple and explained in the text. */
 export function attention(f: BriefFacts, lang: Lang): BriefAlert[] {
   const ml = lang === "ml";
   const out: BriefAlert[] = [];
   const add = (key: string, level: AlertLevel, en: string, mal: string, href: string) => out.push({ key, level, text: ml ? mal : en, href });
+  const dayEn = f.period === "today" ? "Today's" : "Yesterday's", dayMl = f.period === "today" ? "ഇന്നത്തെ" : "ഇന്നലത്തെ";
+  const whenEn = f.period === "today" ? "today" : "yesterday", whenMl = f.period === "today" ? "ഇന്ന്" : "ഇന്നലെ";
 
   if (f.cash?.breachWeek) add("cash_breach", "critical",
     `Cash is forecast to fall below the safety buffer in week ${f.cash.breachWeek}, to about ${money(f.cash.lowest, lang)}.`,
     `${f.cash.breachWeek}-ാം ആഴ്ചയോടെ ക്യാഷ് സുരക്ഷിത പരിധിക്ക് താഴെ, ഏകദേശം ${money(f.cash.lowest, lang)} ആയി കുറയുമെന്നാണ് പ്രവചനം.`, "/accounts/ai");
-  if (f.ar.over90 > 0) add("ar_90", "critical",
+  if (f.scope.finance && f.ar.over90 > 0) add("ar_90", "critical",
     `${money(f.ar.over90, lang)} of patient bills has been unpaid for more than 90 days. The older it gets, the less likely it is to be collected.`,
     `${money(f.ar.over90, lang)} രോഗികളുടെ ബില്ലുകൾ 90 ദിവസത്തിലേറെയായി അടയ്ക്കാതെ കിടക്കുന്നു. വൈകുന്തോറും ഇത് പിരിച്ചെടുക്കാനുള്ള സാധ്യത കുറയും.`, "/billing");
-  const lw = pct(f.y.revenue, f.y.revenueLastWeek);
-  if (lw !== null && lw <= -30) add("rev_drop", "warn",
-    `Yesterday's revenue was ${Math.round(-lw)} percent below the same day last week.`,
-    `ഇന്നലത്തെ വരുമാനം കഴിഞ്ഞ ആഴ്ചയിലെ ഇതേ ദിവസത്തേക്കാൾ ${Math.round(-lw)} ശതമാനം കുറവാണ്.`, "/finance");
-  const noShowRate = f.y.appts ? f.y.noShows / f.y.appts : 0;
-  if (f.y.noShows >= 2 && noShowRate >= 0.15) add("no_show", "warn",
-    `${plural(f.y.noShows, "patient", "patients")} did not turn up yesterday, ${Math.round(noShowRate * 100)} percent of bookings. Reminder calls the day before usually help.`,
-    `ഇന്നലെ ${f.y.noShows} രോഗികൾ ബുക്ക് ചെയ്തിട്ടും വന്നില്ല, ആകെ ബുക്കിംഗിന്റെ ${Math.round(noShowRate * 100)} ശതമാനം. തലേദിവസം ഓർമ്മപ്പെടുത്തൽ കോൾ ചെയ്യുന്നത് സഹായിക്കും.`, "/appointments");
+  const lw = pct(f.day.revenue, f.day.revenueLastWeek);
+  if (f.scope.finance && lw !== null && lw <= -30) add("rev_drop", "warn",
+    `${dayEn} revenue was ${Math.round(-lw)} percent below the same day last week.`,
+    `${dayMl} വരുമാനം കഴിഞ്ഞ ആഴ്ചയിലെ ഇതേ ദിവസത്തേക്കാൾ ${Math.round(-lw)} ശതമാനം കുറവാണ്.`, "/finance");
+  const noShowRate = f.day.appts ? f.day.noShows / f.day.appts : 0;
+  if (f.scope.clinical && f.day.noShows >= 2 && noShowRate >= 0.15) add("no_show", "warn",
+    `${plural(f.day.noShows, "patient", "patients")} did not turn up ${whenEn}, ${Math.round(noShowRate * 100)} percent of bookings. Reminder calls the day before usually help.`,
+    `${whenMl} ${f.day.noShows} രോഗികൾ ബുക്ക് ചെയ്തിട്ടും വന്നില്ല, ആകെ ബുക്കിംഗിന്റെ ${Math.round(noShowRate * 100)} ശതമാനം. തലേദിവസം ഓർമ്മപ്പെടുത്തൽ കോൾ ചെയ്യുന്നത് സഹായിക്കും.`, "/appointments");
   if (f.cash && f.cash.duplicates > 0) add("duplicates", "warn",
     `${plural(f.cash.duplicates, "supplier bill looks", "supplier bills look")} like a possible duplicate, worth ${money(f.cash.duplicateAmount, lang)}. Please check before paying.`,
     `${f.cash.duplicates} സപ്ലയർ ബില്ലുകൾ ഇരട്ടിപ്പായി തോന്നുന്നു, ആകെ ${money(f.cash.duplicateAmount, lang)}. പണം നൽകുന്നതിന് മുമ്പ് പരിശോധിക്കുക.`, "/accounts/ai");
   if (f.cash && f.cash.anomalies > 0) add("anomalies", "warn",
     `${plural(f.cash.anomalies, "expense is", "expenses are")} unusually high compared with the clinic's normal pattern.`,
     `${f.cash.anomalies} ചെലവുകൾ ക്ലിനിക്കിന്റെ സാധാരണ രീതിയേക്കാൾ അസാധാരണമായി കൂടുതലാണ്.`, "/accounts/ai");
-  if (f.today.expected && f.today.expected >= 4 && f.today.booked < f.today.expected * 0.6) add("quiet_day", "warn",
-    `Today looks quiet: ${f.today.booked} booked against about ${Math.round(f.today.expected)} on a normal ${EN_DOW[f.dow]}. A good day for recall calls or a WhatsApp offer.`,
-    `ഇന്ന് തിരക്ക് കുറവാണ്: സാധാരണ ${ML_DOW[f.dow]} ഏകദേശം ${Math.round(f.today.expected)} ആണെങ്കിൽ ഇന്ന് ${f.today.booked} ബുക്കിംഗ് മാത്രം. ഫോളോ-അപ്പ് കോളുകൾക്കോ വാട്ട്സ്ആപ്പ് ഓഫറിനോ നല്ല ദിവസം.`, "/crm");
+  const n = f.next;
+  if (f.scope.clinical && n.expected && n.expected >= 4 && n.booked < n.expected * 0.6) add("quiet_day", "warn",
+    `${n.when === "tomorrow" ? "Tomorrow" : "Today"} looks quiet: ${n.booked} booked against about ${Math.round(n.expected)} on a normal ${EN_DOW[n.dow]}. A good time for recall calls or a WhatsApp offer.`,
+    `${n.when === "tomorrow" ? "നാളെ" : "ഇന്ന്"} തിരക്ക് കുറവാണ്: സാധാരണ ${ML_DOW[n.dow]} ഏകദേശം ${Math.round(n.expected)} ആണെങ്കിൽ ${n.booked} ബുക്കിംഗ് മാത്രം. ഫോളോ-അപ്പ് കോളുകൾക്കോ വാട്ട്സ്ആപ്പ് ഓഫറിനോ നല്ല സമയം.`, "/crm");
 
   const mtd = pct(f.mtd.revenue, f.mtd.revenuePrev);
-  if (mtd !== null && mtd >= 10) add("mtd_up", "good",
+  if (f.scope.finance && mtd !== null && mtd >= 10) add("mtd_up", "good",
     `Good news: this month's revenue is ${Math.round(mtd)} percent ahead of last month at the same point.`,
     `സന്തോഷവാർത്ത: ഈ മാസത്തെ വരുമാനം കഴിഞ്ഞ മാസം ഇതേ സമയത്തേക്കാൾ ${Math.round(mtd)} ശതമാനം മുന്നിലാണ്.`, "/finance");
-  if (f.y.newPatients >= 3) add("new_patients", "good",
-    `${f.y.newPatients} new patients registered yesterday.`,
-    `ഇന്നലെ ${f.y.newPatients} പുതിയ രോഗികൾ രജിസ്റ്റർ ചെയ്തു.`, "/patients");
+  if (f.scope.clinical && f.day.newPatients >= 3) add("new_patients", "good",
+    `${f.day.newPatients} new patients registered ${whenEn}.`,
+    `${whenMl} ${f.day.newPatients} പുതിയ രോഗികൾ രജിസ്റ്റർ ചെയ്തു.`, "/patients");
 
   const rank: Record<AlertLevel, number> = { critical: 0, warn: 1, good: 2 };
   return out.sort((a, b) => rank[a.level] - rank[b.level]);
 }
 
-// ---------------------------------------------------------------- brief
+// ---------------------------------------------------------------- report
 
-export function composeBrief(f: BriefFacts, lang: Lang): Brief {
+export const CLOSING_QUESTION: Record<Lang, string> = {
+  en: "That's your summary. Is there anything else you'd like me to explain?",
+  ml: "ഇതാണ് ഇന്നത്തെ സംഗ്രഹം. ഇനി എന്തെങ്കിലും കൂടുതൽ വിശദീകരിക്കണോ?",
+};
+
+export function composeBrief(f: BriefFacts, lang: Lang, opts: { sections?: readonly SectionKey[] } = {}): Brief {
   const ml = lang === "ml";
-  const first = f.recipient.replace(/\(.*?\)/g, "").trim().split(/\s+/).find((w) => !/^(dr|mr|mrs|ms|prof)\.?$/i.test(w)) ?? "";
+  const want = new Set(allowedSections(f, opts.sections));
+  const first = firstName(f.recipient);
   const date = spokenDate(f.ymd, f.dow, lang);
+  const T = f.period === "today";
   const s: BriefSection[] = [];
-  const push = (key: BriefSection["key"], en: string, mal: string, text: string) => { if (text.trim()) s.push({ key, title: ml ? mal : en, text: text.replace(/\s+/g, " ").trim() }); };
+  const push = (key: BriefSection["key"], en: string, mal: string, text: string) => {
+    if ((key === "intro" || key === "close" || want.has(key as SectionKey)) && text.trim()) s.push({ key, title: ml ? mal : en, text: text.replace(/\s+/g, " ").trim() });
+  };
 
-  // intro
-  push("intro", "Good morning", "സുപ്രഭാതം", ml
-    ? `സുപ്രഭാതം${first ? ` ${first}` : ""}. ${f.org}-ന്റെ ഇന്നത്തെ എലിസ്റ്റർ ബ്രീഫ്, ${date}. ഇന്നലത്തെ പ്രകടനവും ഇന്ന് ശ്രദ്ധിക്കേണ്ട കാര്യങ്ങളും ഇതാ.`
-    : `Good morning${first ? `, ${first}` : ""}. This is your Elister brief for ${f.org}, ${date}. Here is how yesterday went and what needs your attention today.`);
+  push("intro", "Hello", "നമസ്കാരം", ml
+    ? `${greet(f.hour, lang)}${first ? ` ${first}` : ""}. ഞാൻ നിങ്ങളുടെ പേഴ്സണൽ അസിസ്റ്റന്റ് എലിസ്റ്റർ ആണ്. ${f.org}-ന്റെ ${T ? "ഇന്നത്തെ" : "ഇന്നലത്തെ"} റിപ്പോർട്ട്, ${date}.`
+    : `${greet(f.hour, lang)}${first ? `, ${first}` : ""}. This is Elister, your personal assistant, with ${T ? "today's" : "yesterday's"} report for ${f.org}, ${date}.`);
 
   // patients
   {
-    const y = f.y;
-    const en = y.appts === 0 ? "There were no appointments yesterday." :
-      `Yesterday the clinic saw ${plural(y.seen, "patient", "patients")} from ${plural(y.appts, "appointment", "appointments")}` +
+    const y = f.day, W = T ? "Today" : "Yesterday", Wm = T ? "ഇന്ന്" : "ഇന്നലെ";
+    const en = y.appts === 0 ? `There were no appointments ${W.toLowerCase()}.` :
+      `${W} the clinic saw ${plural(y.seen, "patient", "patients")} from ${plural(y.appts, "appointment", "appointments")}` +
       `${y.newPatients ? `, and ${y.newPatients} ${y.newPatients === 1 ? "was" : "were"} new to the clinic` : ""}.` +
       `${y.noShows ? ` ${plural(y.noShows, "patient", "patients")} did not show up` : ""}${y.noShows && y.cancelled ? ` and ${y.cancelled} cancelled.` : y.noShows ? "." : y.cancelled ? ` ${y.cancelled} cancelled.` : ""}`;
-    const mal = y.appts === 0 ? "ഇന്നലെ അപ്പോയിന്റ്മെന്റുകൾ ഒന്നും ഉണ്ടായിരുന്നില്ല." :
-      `ഇന്നലെ ${y.appts} അപ്പോയിന്റ്മെന്റുകളിൽ നിന്ന് ${y.seen} രോഗികളെ ക്ലിനിക്കിൽ കണ്ടു.` +
+    const mal = y.appts === 0 ? `${Wm} അപ്പോയിന്റ്മെന്റുകൾ ഒന്നും ഉണ്ടായിരുന്നില്ല.` :
+      `${Wm} ${y.appts} അപ്പോയിന്റ്മെന്റുകളിൽ നിന്ന് ${y.seen} രോഗികളെ ക്ലിനിക്കിൽ കണ്ടു.` +
       `${y.newPatients ? ` ഇതിൽ ${y.newPatients} പേർ പുതിയ രോഗികളാണ്.` : ""}` +
-      `${y.noShows ? ` ${y.noShows} പേർ ബുക്ക് ചെയ്തിട്ടും വന്നില്ല.` : ""}${y.cancelled ? ` ${y.cancelled} ബുക്കിംഗുകൾ റദ്ദാക്കി.` : ""}`;
+      `${y.noShows ? ` ${y.noShows} പേർ ബുക്ക് ചെയ്തിട്ടും വന്നില്ല.` : ""}${y.cancelled ? ` ${y.cancelled} ബുക്കിംഗ് റദ്ദാക്കി.` : ""}`;
     push("patients", "Patients", "രോഗികൾ", ml ? mal : en);
   }
 
   // revenue
   {
-    const d = pct(f.y.revenue, f.y.revenuePrev), w = pct(f.y.revenue, f.y.revenueLastWeek), m = pct(f.mtd.revenue, f.mtd.revenuePrev);
+    const d = pct(f.day.revenue, f.day.revenuePrev), w = pct(f.day.revenue, f.day.revenueLastWeek), m = pct(f.mtd.revenue, f.mtd.revenuePrev);
     const td = f.mtd.topDoctor;
-    const en = `Revenue yesterday was ${money(f.y.revenue, lang)}` +
+    const en = `Revenue ${T ? "today" : "yesterday"} was ${money(f.day.revenue, lang)}` +
       `${d !== null ? `, ${change(d, lang)} on the day before` : ""}${w !== null ? ` and ${change(w, lang)} on the same day last week` : ""}. ` +
       `Month to date, revenue is ${money(f.mtd.revenue, lang)}${m !== null ? `, ${change(m, lang)} on last month at this point` : ""}, ` +
       `with net profit of ${money(f.mtd.netProfit, lang)}. ` +
       `${td ? `${td.name} leads this month with ${money(td.amount, lang)}.` : ""}`;
-    const mal = `ഇന്നലത്തെ വരുമാനം ${money(f.y.revenue, lang)} ആണ്` +
+    const mal = `${T ? "ഇന്നത്തെ" : "ഇന്നലത്തെ"} വരുമാനം ${money(f.day.revenue, lang)} ആണ്` +
       `${d !== null ? `, തലേദിവസത്തേക്കാൾ ${change(d, lang)}` : ""}${w !== null ? `, കഴിഞ്ഞ ആഴ്ചയിലെ ഇതേ ദിവസത്തേക്കാൾ ${change(w, lang)}` : ""}. ` +
       `ഈ മാസം ഇതുവരെ വരുമാനം ${money(f.mtd.revenue, lang)}${m !== null ? `, കഴിഞ്ഞ മാസം ഇതേ സമയത്തേക്കാൾ ${change(m, lang)}` : ""}. ` +
       `ഈ മാസത്തെ അറ്റാദായം ${money(f.mtd.netProfit, lang)}. ` +
@@ -180,23 +221,22 @@ export function composeBrief(f: BriefFacts, lang: Lang): Brief {
     push("receivables", "Receivables", "കിട്ടാനുള്ള തുക", ml ? mal : en);
   }
 
-  // today
+  // next day's book
   {
-    const t = f.today;
-    const en = `Today there ${t.booked === 1 ? "is 1 appointment" : `are ${t.booked} appointments`} booked` +
-      `${t.expected ? `, against about ${Math.round(t.expected)} on a normal ${EN_DOW[f.dow]}` : ""}.` +
-      `${t.firstAt ? ` The first patient is at ${t.firstAt}.` : ""}` +
-      `${t.busiest ? ` ${t.busiest.name} has the busiest list, with ${t.busiest.count}.` : ""}` +
-      ` Tomorrow has ${t.tomorrow} booked so far.`;
-    const mal = `ഇന്ന് ${t.booked} അപ്പോയിന്റ്മെന്റുകൾ ബുക്ക് ചെയ്തിട്ടുണ്ട്` +
-      `${t.expected ? `; സാധാരണ ${ML_DOW[f.dow]} ഏകദേശം ${Math.round(t.expected)} ആണ് ഉണ്ടാകാറുള്ളത്` : ""}.` +
-      `${t.firstAt ? ` ആദ്യ രോഗി ${t.firstAt}-ന്.` : ""}` +
-      `${t.busiest ? ` ഏറ്റവും തിരക്ക് ${t.busiest.name}-ക്കാണ്, ${t.busiest.count} പേർ.` : ""}` +
-      ` നാളത്തേക്ക് ഇതുവരെ ${t.tomorrow} ബുക്കിംഗ്.`;
-    push("today", "Today", "ഇന്ന്", ml ? mal : en);
+    const n = f.next, tm = n.when === "tomorrow";
+    const en = `${tm ? "Tomorrow" : "Today"} there ${n.booked === 1 ? "is 1 appointment" : `are ${n.booked} appointments`} booked` +
+      `${n.expected ? `, against about ${Math.round(n.expected)} on a normal ${EN_DOW[n.dow]}` : ""}.` +
+      `${n.firstAt ? ` The first patient is at ${n.firstAt}.` : ""}` +
+      `${n.busiest ? ` ${n.busiest.name} has the busiest list, with ${n.busiest.count}.` : ""}` +
+      ` ${tm ? "The day after" : "Tomorrow"} has ${n.after} booked so far.`;
+    const mal = `${tm ? "നാളെ" : "ഇന്ന്"} ${n.booked} അപ്പോയിന്റ്മെന്റുകൾ ബുക്ക് ചെയ്തിട്ടുണ്ട്` +
+      `${n.expected ? `; സാധാരണ ${ML_DOW[n.dow]} ഏകദേശം ${Math.round(n.expected)} ആണ് ഉണ്ടാകാറുള്ളത്` : ""}.` +
+      `${n.firstAt ? ` ആദ്യ രോഗി ${n.firstAt}-ന്.` : ""}` +
+      `${n.busiest ? ` ഏറ്റവും തിരക്ക് ${n.busiest.name}-ക്കാണ്, ${n.busiest.count} പേർ.` : ""}` +
+      ` ${tm ? "മറ്റന്നാളത്തേക്ക്" : "നാളത്തേക്ക്"} ഇതുവരെ ${n.after} ബുക്കിംഗ്.`;
+    push("upcoming", tm ? "Tomorrow" : "Today", tm ? "നാളെ" : "ഇന്ന്", ml ? mal : en);
   }
 
-  // cash
   if (f.cash) {
     const c = f.cash;
     const en = `Cash in the bank is ${money(c.balance, lang)}. The financial health score is ${c.score} out of 100, rated ${c.grade}. ` +
@@ -206,43 +246,41 @@ export function composeBrief(f: BriefFacts, lang: Lang): Brief {
     push("cash", "Cash", "ക്യാഷ്", ml ? mal : en);
   }
 
-  // attention
   const alerts = attention(f, lang);
   const issues = alerts.filter((a) => a.level !== "good").slice(0, 3), wins = alerts.filter((a) => a.level === "good").slice(0, 1);
   push("attention", "Needs attention", "ശ്രദ്ധിക്കേണ്ടവ", issues.length
-    ? (ml ? `ഇന്ന് ശ്രദ്ധിക്കേണ്ട ${issues.length === 1 ? "കാര്യം" : `${issues.length} കാര്യങ്ങൾ`}. ` : `${issues.length === 1 ? "One thing" : `${issues.length} things`} need your attention. `) +
+    ? (ml ? `ശ്രദ്ധിക്കേണ്ട ${issues.length === 1 ? "കാര്യം" : `${issues.length} കാര്യങ്ങൾ`}. ` : `${issues.length === 1 ? "One thing needs" : `${issues.length} things need`} your attention. `) +
       issues.map((a, i) => (ml ? `${i + 1}. ${a.text}` : `${["First", "Second", "Third"][i]}, ${a.text.charAt(0).toLowerCase()}${a.text.slice(1)}`)).join(" ") + (wins.length ? ` ${wins[0].text}` : "")
-    : (ml ? "ഇന്ന് അടിയന്തരമായി ശ്രദ്ധിക്കേണ്ടതൊന്നുമില്ല. " : "Nothing urgent needs your attention today. ") + (wins.length ? wins[0].text : ""));
+    : (ml ? "അടിയന്തരമായി ശ്രദ്ധിക്കേണ്ടതൊന്നുമില്ല. " : "Nothing urgent needs your attention. ") + (wins.length ? wins[0].text : ""));
 
-  push("close", "Ask me anything", "എന്തും ചോദിക്കാം", ml
-    ? "ഇതാണ് ഇന്നത്തെ ബ്രീഫ്. കൂടുതൽ അറിയാൻ മൈക്ക് ബട്ടൺ അമർത്തി ചോദിക്കൂ, ഉദാഹരണത്തിന്, ആരിൽ നിന്നാണ് പണം കിട്ടാനുള്ളത്."
-    : "That's your brief. Tap the microphone and ask me anything, for example, who owes us the most, or how today is looking.");
+  push("close", "Anything else?", "മറ്റെന്തെങ്കിലും?", CLOSING_QUESTION[lang]);
 
   const text = s.map((x) => x.text).join("\n\n");
   const words = text.split(/\s+/).filter(Boolean).length;
-  const kpis: Kpi[] = [
-    { key: "patients", label: ml ? "ഇന്നലെ കണ്ട രോഗികൾ" : "Patients seen yesterday", value: String(f.y.seen), deltaPct: null, goodWhen: "up" },
-    { key: "revenue", label: ml ? "ഇന്നലത്തെ വരുമാനം" : "Revenue yesterday", value: moneyShort(f.y.revenue), deltaPct: pct(f.y.revenue, f.y.revenueLastWeek), goodWhen: "up" },
-    { key: "mtd", label: ml ? "ഈ മാസം ഇതുവരെ" : "Revenue this month", value: moneyShort(f.mtd.revenue), deltaPct: pct(f.mtd.revenue, f.mtd.revenuePrev), goodWhen: "up" },
-    { key: "receivables", label: ml ? "കിട്ടാനുള്ളത്" : "Receivables", value: moneyShort(f.ar.patient + f.ar.trade), deltaPct: null, goodWhen: "down" },
-    { key: "today", label: ml ? "ഇന്നത്തെ ബുക്കിംഗ്" : "Booked today", value: String(f.today.booked), deltaPct: f.today.expected ? pct(f.today.booked, f.today.expected) : null, goodWhen: "up" },
-  ];
-  if (f.cash) kpis.push({ key: "health", label: ml ? "ആരോഗ്യ സ്കോർ" : "Health score", value: `${f.cash.score}/100`, deltaPct: null, goodWhen: "up" });
+  const W = T ? (ml ? "ഇന്ന്" : "today") : (ml ? "ഇന്നലെ" : "yesterday");
+  const kpis: Kpi[] = [];
+  if (want.has("patients")) kpis.push({ key: "patients", label: ml ? `${W} കണ്ട രോഗികൾ` : `Patients seen ${W}`, value: String(f.day.seen), deltaPct: null, goodWhen: "up" });
+  if (want.has("revenue")) kpis.push(
+    { key: "revenue", label: ml ? `${W} വരുമാനം` : `Revenue ${W}`, value: moneyShort(f.day.revenue), deltaPct: pct(f.day.revenue, f.day.revenueLastWeek), goodWhen: "up" },
+    { key: "mtd", label: ml ? "ഈ മാസം ഇതുവരെ" : "Revenue this month", value: moneyShort(f.mtd.revenue), deltaPct: pct(f.mtd.revenue, f.mtd.revenuePrev), goodWhen: "up" });
+  if (want.has("receivables")) kpis.push({ key: "receivables", label: ml ? "കിട്ടാനുള്ളത്" : "Receivables", value: moneyShort(f.ar.patient + f.ar.trade), deltaPct: null, goodWhen: "down" });
+  if (want.has("upcoming")) kpis.push({ key: "next", label: ml ? `${f.next.when === "tomorrow" ? "നാളത്തെ" : "ഇന്നത്തെ"} ബുക്കിംഗ്` : `Booked ${f.next.when}`, value: String(f.next.booked), deltaPct: f.next.expected ? pct(f.next.booked, f.next.expected) : null, goodWhen: "up" });
+  if (want.has("cash") && f.cash) kpis.push({ key: "health", label: ml ? "ആരോഗ്യ സ്കോർ" : "Health score", value: `${f.cash.score}/100`, deltaPct: null, goodWhen: "up" });
 
   return {
-    lang, ymd: f.ymd, title: ml ? "എലിസ്റ്റർ ദൈനംദിന ബ്രീഫ്" : "Elister daily brief", sections: s, alerts, kpis, text, words,
-    // Malayalam TTS runs slower per word (long agglutinated words); ~1.6 words/s vs ~2.5 for English.
+    lang, ymd: f.ymd, period: f.period, title: ml ? (T ? "ഇന്നത്തെ റിപ്പോർട്ട്" : "ഇന്നലത്തെ റിപ്പോർട്ട്") : (T ? "Today's report" : "Yesterday's report"),
+    sections: s, alerts, kpis, text, words,
+    // Malayalam speech runs slower per word (long agglutinated words): ~1.6 words/s against ~2.5 for English.
     seconds: Math.round(words / (ml ? 1.6 : 2.5)),
     suggestions: suggestions(lang, f),
   };
 }
 
-export function suggestions(lang: Lang, f?: BriefFacts): string[] {
-  const en = ["Who owes us the most?", "How is today looking?", "How does this month compare?", "Which doctor brought the most revenue?", "Why did patients not show up?"];
-  const ml = ["ആരിൽ നിന്നാണ് കൂടുതൽ പണം കിട്ടാനുള്ളത്?", "ഇന്നത്തെ ദിവസം എങ്ങനെയുണ്ട്?", "ഈ മാസം എങ്ങനെയുണ്ട്?", "ഏത് ഡോക്ടറാണ് കൂടുതൽ വരുമാനം കൊണ്ടുവന്നത്?", "എന്താണ് ശ്രദ്ധിക്കേണ്ടത്?"];
-  const base = lang === "ml" ? ml : en;
-  if (f?.cash) base.splice(3, 0, lang === "ml" ? "ക്യാഷ് എത്ര കാലം തികയും?" : "How long will our cash last?");
-  return base.slice(0, 5);
+export function suggestions(lang: Lang, f?: Pick<BriefFacts, "cash" | "scope">): string[] {
+  const fin = f?.scope.finance ?? true, cli = f?.scope.clinical ?? true;
+  const en = [fin && "Who owes us the most?", cli && "How does tomorrow look?", fin && "How does this month compare?", f?.cash && "How long will our cash last?", fin && "Which doctor brought the most revenue?", "What needs my attention?"];
+  const ml = [fin && "ആരിൽ നിന്നാണ് കൂടുതൽ പണം കിട്ടാനുള്ളത്?", cli && "നാളെ എങ്ങനെയുണ്ട്?", fin && "ഈ മാസം എങ്ങനെയുണ്ട്?", f?.cash && "ക്യാഷ് എത്ര കാലം തികയും?", fin && "ഏത് ഡോക്ടറാണ് കൂടുതൽ വരുമാനം കൊണ്ടുവന്നത്?", "എന്താണ് ശ്രദ്ധിക്കേണ്ടത്?"];
+  return (lang === "ml" ? ml : en).filter((x): x is string => typeof x === "string").slice(0, 5);
 }
 
 /** One-message text version for WhatsApp / email. */
@@ -255,14 +293,14 @@ export function shareText(b: Brief): string {
 
 // ---------------------------------------------------------------- follow-up questions
 
-export type Intent = "revenue" | "patients" | "today" | "tomorrow" | "receivables" | "profit" | "cash" | "doctor" | "noshow" | "attention" | "month" | "repeat" | "help" | "lang_en" | "lang_ml" | "greeting" | "thanks" | "unknown";
+export type Intent = "revenue" | "patients" | "today" | "tomorrow" | "receivables" | "profit" | "cash" | "doctor" | "noshow" | "attention" | "month" | "repeat" | "help" | "lang_en" | "lang_ml" | "greeting" | "done" | "unknown";
 
 /** English and Malayalam (script and common Manglish) cue words. Order matters: more specific intents first. */
 const CUES: [Intent, RegExp][] = [
   ["lang_ml", /\b(in )?malayalam\b|മലയാളത്തിൽ|മലയാളം/i],
   ["lang_en", /\b(in )?english\b|ഇംഗ്ലീഷ്/i],
+  ["done", /^\s*(no|nope|nothing|no thanks?|that'?s (all|it)|i'?m good|all good|thanks?|thank you|bye|goodbye|ok(ay)?( bye)?|done)\b[\s.!]*$|^\s*(ഇല്ല|വേണ്ട|മതി|നന്ദി|ശരി)[\s.!]*$|ഒന്നും വേണ്ട|അത്ര മതി/i],
   ["repeat", /\b(repeat|again|say that again|replay|summary|summari[sz]e)\b|വീണ്ടും|ആവർത്തി|ഒന്നുകൂടി|സംഗ്രഹം/i],
-  ["thanks", /\b(thanks|thank you|great|perfect|ok(ay)? bye|bye)\b|നന്ദി|ശരി മതി/i],
   ["help", /\b(what can you|help|what do you know|options)\b|എന്തൊക്കെ ചോദിക്കാം|സഹായം/i],
   ["tomorrow", /\btomorrow\b|നാളെ|naale/i],
   ["noshow", /no[- ]?show|did(n't| not) (come|turn up|show)|missed|വന്നില്ല|നോ ഷോ/i],
@@ -282,55 +320,63 @@ export function detectIntent(q: string): Intent {
   return "unknown";
 }
 
-export const MALAYALAM = /[\u0D00-\u0D7F]/;
-export type VoiceAnswer = { intent: Intent; answer: string; switchLang?: Lang; href?: string; followUps: string[]; handled: boolean };
+export const MALAYALAM = /[ഀ-ൿ]/;
+/** end = the owner said they are done; the call can hang up after speaking the answer. */
+export type VoiceAnswer = { intent: Intent; answer: string; switchLang?: Lang; href?: string; followUps: string[]; handled: boolean; end?: boolean };
 
-/** Answers a follow-up from the brief's own figures. Unknown questions return handled:false so the server can try the books (askBooks). */
+/** Answers a follow-up from the report's own figures. Unknown questions return handled:false so the server can try the books. */
 export function answerFromFacts(q: string, f: BriefFacts, asked: Lang): VoiceAnswer {
-  // A question typed or spoken in Malayalam script gets a Malayalam answer, whatever the current setting.
+  // A question asked in Malayalam script gets a Malayalam answer, whatever the current setting.
   const lang: Lang = MALAYALAM.test(q) ? "ml" : asked;
   const ml = lang === "ml";
   const intent = detectIntent(q);
   const say = (en: string, mal: string) => (ml ? mal : en);
   const brief = composeBrief(f, lang);
   const sec = (k: BriefSection["key"]) => brief.sections.find((x) => x.key === k)?.text ?? "";
+  const more = say(" Anything else?", " മറ്റെന്തെങ്കിലും?");
   const r = (answer: string, href?: string, extra: Partial<VoiceAnswer> = {}): VoiceAnswer => ({ intent, answer, href, followUps: suggestions(lang, f).filter((x) => x !== q).slice(0, 3), handled: true, ...extra });
+  const noAccess = say("Your access does not include that part of the business. The super admin can enable it.", "നിങ്ങളുടെ ആക്സസിൽ ആ വിഭാഗം ഉൾപ്പെടുന്നില്ല. സൂപ്പർ അഡ്മിന് അത് അനുവദിക്കാം.");
+  const fin = (t: string) => (f.scope.finance ? t : noAccess), cli = (t: string) => (f.scope.clinical ? t : noAccess);
 
   switch (intent) {
     case "lang_ml": return r("ശരി, ഇനി മലയാളത്തിൽ സംസാരിക്കാം. എന്താണ് അറിയേണ്ടത്?", undefined, { switchLang: "ml", followUps: suggestions("ml", f).slice(0, 3) });
     case "lang_en": return r("Sure, switching to English. What would you like to know?", undefined, { switchLang: "en", followUps: suggestions("en", f).slice(0, 3) });
-    case "repeat": return r(brief.sections.filter((x) => ["patients", "revenue", "receivables"].includes(x.key)).map((x) => x.text).join(" "));
-    case "thanks": return r(say("You're welcome. I'll have tomorrow's brief ready at 8 in the morning.", "സന്തോഷം. നാളെ രാവിലെ 8 മണിക്ക് അടുത്ത ബ്രീഫ് തയ്യാറായിരിക്കും."));
-    case "greeting": return r(say("Hello! Ask me about revenue, patients, today's bookings, money to collect or cash.", "നമസ്കാരം! വരുമാനം, രോഗികൾ, ഇന്നത്തെ ബുക്കിംഗ്, കിട്ടാനുള്ള പണം, ക്യാഷ് എന്നിവയെക്കുറിച്ച് ചോദിക്കാം."));
-    case "help": return r(say("I can tell you about revenue, profit, patients, today's and tomorrow's bookings, money owed to the clinic, cash, the top doctor and anything that needs attention. I can also answer questions about the books, like how much was spent on rent last month.",
+    case "done": return r(say("Alright. Your full report is saved in Elister. Have a good evening.", "ശരി. പൂർണ്ണ റിപ്പോർട്ട് എലിസ്റ്ററിൽ സേവ് ചെയ്തിട്ടുണ്ട്. ശുഭരാത്രി."), undefined, { end: true });
+    case "repeat": return r(brief.sections.filter((x) => !["intro", "close"].includes(x.key)).map((x) => x.text).join(" ") + more);
+    case "greeting": return r(say("Hello! Ask me about revenue, patients, bookings, money to collect or cash.", "നമസ്കാരം! വരുമാനം, രോഗികൾ, ബുക്കിംഗ്, കിട്ടാനുള്ള പണം, ക്യാഷ് എന്നിവയെക്കുറിച്ച് ചോദിക്കാം."));
+    case "help": return r(say("I can tell you about revenue, profit, patients, bookings for today and tomorrow, money owed to the clinic, cash, the top doctor and anything that needs attention. I can also answer questions about the books, like how much was spent on rent last month.",
       "വരുമാനം, ലാഭം, രോഗികൾ, ഇന്നത്തെയും നാളത്തെയും ബുക്കിംഗ്, കിട്ടാനുള്ള പണം, ക്യാഷ്, മികച്ച ഡോക്ടർ, ശ്രദ്ധിക്കേണ്ട കാര്യങ്ങൾ എന്നിവയെക്കുറിച്ച് പറയാം."));
-    case "revenue": return r(sec("revenue"), "/finance");
-    case "patients": return r(sec("patients"), "/patients");
-    case "today": return r(sec("today"), "/appointments");
-    case "tomorrow": return r(say(`Tomorrow has ${f.today.tomorrow} appointments booked so far.`, `നാളത്തേക്ക് ഇതുവരെ ${f.today.tomorrow} അപ്പോയിന്റ്മെന്റുകൾ ബുക്ക് ചെയ്തിട്ടുണ്ട്.`), "/appointments");
-    case "receivables": return r(sec("receivables"), "/billing");
+    case "revenue": return r(fin(sec("revenue") || composeBrief(f, lang, { sections: ["revenue"] }).sections.find((x) => x.key === "revenue")?.text || "") + more, "/finance");
+    case "patients": return r(cli(composeBrief(f, lang, { sections: ["patients"] }).sections.find((x) => x.key === "patients")?.text ?? "") + more, "/patients");
+    case "today": case "tomorrow": {
+      const n = f.next;
+      const asksNext = intent === n.when || (intent === "today" && n.when === "today");
+      if (asksNext) return r(cli(composeBrief(f, lang, { sections: ["upcoming"] }).sections.find((x) => x.key === "upcoming")?.text ?? "") + more, "/appointments");
+      if (intent === "today" && f.period === "today") return r(cli(composeBrief(f, lang, { sections: ["patients"] }).sections.find((x) => x.key === "patients")?.text ?? "") + more, "/appointments");
+      return r(cli(say(`${intent === "tomorrow" ? "Tomorrow" : "That day"} has ${n.after} appointments booked so far.`, `${intent === "tomorrow" ? "നാളത്തേക്ക്" : "ആ ദിവസത്തേക്ക്"} ഇതുവരെ ${n.after} അപ്പോയിന്റ്മെന്റുകൾ.`)) + more, "/appointments");
+    }
+    case "receivables": return r(fin(composeBrief(f, lang, { sections: ["receivables"] }).sections.find((x) => x.key === "receivables")?.text ?? "") + more, "/billing");
     case "profit": {
       const margin = f.mtd.revenue ? Math.round((f.mtd.netProfit / f.mtd.revenue) * 100) : null;
-      return r(say(`Net profit this month so far is ${money(f.mtd.netProfit, lang)} on revenue of ${money(f.mtd.revenue, lang)}${margin !== null ? `, a margin of ${margin} percent` : ""}.`,
-        `ഈ മാസം ഇതുവരെ ${money(f.mtd.revenue, lang)} വരുമാനത്തിൽ അറ്റാദായം ${money(f.mtd.netProfit, lang)}${margin !== null ? `, അതായത് ${margin} ശതമാനം മാർജിൻ` : ""}.`), "/finance");
+      return r(fin(say(`Net profit this month so far is ${money(f.mtd.netProfit, lang)} on revenue of ${money(f.mtd.revenue, lang)}${margin !== null ? `, a margin of ${margin} percent` : ""}.`,
+        `ഈ മാസം ഇതുവരെ ${money(f.mtd.revenue, lang)} വരുമാനത്തിൽ അറ്റാദായം ${money(f.mtd.netProfit, lang)}${margin !== null ? `, അതായത് ${margin} ശതമാനം മാർജിൻ` : ""}.`)) + more, "/finance");
     }
-    case "cash": return f.cash ? r(sec("cash") + (f.cash.breachWeek ? " " + attention(f, lang).find((a) => a.key === "cash_breach")!.text : ""), "/accounts/ai")
-      : r(say("Cash figures come from the books, and your role does not include access to them.", "ക്യാഷ് വിവരങ്ങൾ അക്കൗണ്ട്സിൽ നിന്നാണ്; നിങ്ങളുടെ റോളിന് അതിലേക്ക് പ്രവേശനമില്ല."));
+    case "cash": return f.cash ? r(composeBrief(f, lang, { sections: ["cash"] }).sections.find((x) => x.key === "cash")!.text + (f.cash.breachWeek ? " " + attention(f, lang).find((a) => a.key === "cash_breach")!.text : "") + more, "/accounts/ai") : r(noAccess);
     case "doctor": {
       const d = f.mtd.topDoctor;
-      return r(d ? say(`${d.name} has brought in the most revenue this month, ${money(d.amount, lang)}.${f.today.busiest ? ` Today, ${f.today.busiest.name} has the busiest list with ${f.today.busiest.count} patients.` : ""}`,
-        `ഈ മാസം ഏറ്റവും കൂടുതൽ വരുമാനം ${d.name}-ൽ നിന്നാണ്, ${money(d.amount, lang)}.${f.today.busiest ? ` ഇന്ന് ഏറ്റവും തിരക്ക് ${f.today.busiest.name}-ക്കാണ്, ${f.today.busiest.count} പേർ.` : ""}`)
-        : say("No doctor revenue has been recorded this month yet.", "ഈ മാസം ഡോക്ടർമാരുടെ വരുമാനം ഇതുവരെ രേഖപ്പെടുത്തിയിട്ടില്ല."), "/finance");
+      return r(fin(d ? say(`${d.name} has brought in the most revenue this month, ${money(d.amount, lang)}.${f.next.busiest ? ` ${f.next.when === "tomorrow" ? "Tomorrow" : "Today"}, ${f.next.busiest.name} has the busiest list with ${f.next.busiest.count} patients.` : ""}`,
+        `ഈ മാസം ഏറ്റവും കൂടുതൽ വരുമാനം ${d.name}-ൽ നിന്നാണ്, ${money(d.amount, lang)}.${f.next.busiest ? ` ${f.next.when === "tomorrow" ? "നാളെ" : "ഇന്ന്"} ഏറ്റവും തിരക്ക് ${f.next.busiest.name}-ക്കാണ്, ${f.next.busiest.count} പേർ.` : ""}`)
+        : say("No doctor revenue has been recorded this month yet.", "ഈ മാസം ഡോക്ടർമാരുടെ വരുമാനം ഇതുവരെ രേഖപ്പെടുത്തിയിട്ടില്ല.")) + more, "/finance");
     }
     case "noshow": {
-      const rate = f.y.appts ? Math.round((f.y.noShows / f.y.appts) * 100) : 0;
-      return r(say(`${plural(f.y.noShows, "patient", "patients")} did not show up yesterday, ${rate} percent of bookings. The system does not record why; the usual causes are long booking lead times and no reminder the day before. The Assistants page scores each upcoming booking for no-show risk so reception can call the riskiest first.`,
-        `ഇന്നലെ ${f.y.noShows} രോഗികൾ വന്നില്ല, ബുക്കിംഗിന്റെ ${rate} ശതമാനം. കാരണം സിസ്റ്റം രേഖപ്പെടുത്തുന്നില്ല; സാധാരണയായി ദൂരെയുള്ള ബുക്കിംഗും ഓർമ്മപ്പെടുത്തൽ ഇല്ലാത്തതുമാണ് കാരണങ്ങൾ.`), "/appointments");
+      const rate = f.day.appts ? Math.round((f.day.noShows / f.day.appts) * 100) : 0;
+      return r(cli(say(`${plural(f.day.noShows, "patient", "patients")} did not show up, ${rate} percent of bookings. The system does not record why; the usual causes are bookings made far ahead and no reminder the day before. The Assistants page scores each upcoming booking for no-show risk so reception can call the riskiest first.`,
+        `${f.day.noShows} രോഗികൾ വന്നില്ല, ബുക്കിംഗിന്റെ ${rate} ശതമാനം. കാരണം സിസ്റ്റം രേഖപ്പെടുത്തുന്നില്ല; സാധാരണയായി ദൂരെയുള്ള ബുക്കിംഗും ഓർമ്മപ്പെടുത്തൽ ഇല്ലാത്തതുമാണ് കാരണങ്ങൾ.`)) + more, "/appointments");
     }
-    case "attention": return r(sec("attention"));
-    case "month": return r(say(
+    case "attention": return r((composeBrief(f, lang, { sections: ["attention"] }).sections.find((x) => x.key === "attention")?.text ?? "") + more);
+    case "month": return r(fin(say(
       `Month to date, revenue is ${money(f.mtd.revenue, lang)}${f.mtd.revenuePrev !== null ? ` against ${money(f.mtd.revenuePrev, lang)} at the same point last month, ${change(pct(f.mtd.revenue, f.mtd.revenuePrev), lang)}` : ""}, from ${f.mtd.appts} appointments. Net profit is ${money(f.mtd.netProfit, lang)}.`,
-      `ഈ മാസം ഇതുവരെ ${f.mtd.appts} അപ്പോയിന്റ്മെന്റുകളിൽ നിന്ന് വരുമാനം ${money(f.mtd.revenue, lang)}${f.mtd.revenuePrev !== null ? `; കഴിഞ്ഞ മാസം ഇതേ സമയം ${money(f.mtd.revenuePrev, lang)} ആയിരുന്നു, ${change(pct(f.mtd.revenue, f.mtd.revenuePrev), lang)}` : ""}. അറ്റാദായം ${money(f.mtd.netProfit, lang)}.`), "/finance");
+      `ഈ മാസം ഇതുവരെ ${f.mtd.appts} അപ്പോയിന്റ്മെന്റുകളിൽ നിന്ന് വരുമാനം ${money(f.mtd.revenue, lang)}${f.mtd.revenuePrev !== null ? `; കഴിഞ്ഞ മാസം ഇതേ സമയം ${money(f.mtd.revenuePrev, lang)} ആയിരുന്നു, ${change(pct(f.mtd.revenue, f.mtd.revenuePrev), lang)}` : ""}. അറ്റാദായം ${money(f.mtd.netProfit, lang)}.`)) + more, "/finance");
     default: return { intent, answer: "", followUps: suggestions(lang, f).slice(0, 3), handled: false };
   }
 }

@@ -284,3 +284,29 @@ tbody > tr { transition: background-color 0.15s; }
 .brief-cta .eq span:nth-child(2) { animation-delay: .2s; } .brief-cta .eq span:nth-child(3) { animation-delay: .4s; } .brief-cta .eq span:nth-child(4) { animation-delay: .1s; }
 @keyframes eq { 0%, 100% { height: 4px; } 50% { height: 16px; } }
 @media (prefers-reduced-motion: reduce) { .brief-glow, .brief-orb-ring, .brief-orb-core, .brief-mic.is-on, .brief-cta .eq span { animation: none !important; } }
+
+/* ---------------- assistant call ---------------- */
+.call-screen { position: fixed; inset: 0; z-index: 60; overflow-y: auto; background: #061d33; }
+.call-bg { position: fixed; inset: 0; background:
+  radial-gradient(60% 50% at 50% 18%, rgba(40, 196, 224, 0.35), transparent 70%),
+  radial-gradient(50% 40% at 85% 90%, rgba(0, 160, 160, 0.35), transparent 70%),
+  linear-gradient(180deg, #072a47 0%, #061d33 60%, #04121f 100%); }
+.call-overlay { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; padding: 1rem; background: rgba(4, 18, 31, 0.86); backdrop-filter: blur(14px); animation: rise .25s ease-out both; }
+.call-card { width: 100%; max-width: 380px; border-radius: 32px; padding: 40px 24px 32px; text-align: center; background: linear-gradient(180deg, #0b3558, #061d33); box-shadow: 0 40px 90px -30px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
+.call-avatar { position: relative; margin-inline: auto; display: grid; place-items: center; width: 132px; height: 132px; }
+.call-avatar-core { position: relative; z-index: 2; display: grid; place-items: center; width: 112px; height: 112px; border-radius: 9999px; font-size: 44px; font-weight: 700; color: #0b3558;
+  background: radial-gradient(circle at 32% 28%, #ffffff 0%, #d9f3fb 45%, #6ccbe6 100%); box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.08), 0 20px 50px -12px rgba(40, 196, 224, 0.6); }
+.call-wave { position: absolute; inset: 10px; border-radius: 9999px; border: 2px solid rgba(108, 203, 230, 0.6); opacity: 0; }
+.call-avatar.is-ringing .call-wave { animation: orb-pulse 1.6s ease-out infinite; }
+.call-avatar.is-ringing .call-wave.w2 { animation-delay: .5s; } .call-avatar.is-ringing .call-wave.w3 { animation-delay: 1s; }
+.call-avatar.is-ringing .call-avatar-core { animation: call-shake 1.6s ease-in-out infinite; }
+.call-avatar.is-speaking .call-wave { animation: orb-pulse 1.4s ease-out infinite; } .call-avatar.is-speaking .call-wave.w2 { animation-delay: .45s; } .call-avatar.is-speaking .call-wave.w3 { animation-delay: .9s; }
+.call-avatar.is-speaking .call-avatar-core { animation: orb-breathe 1.2s ease-in-out infinite; }
+.call-avatar.is-listening .call-wave { border-color: rgba(31, 191, 117, 0.7); animation: orb-pulse 1s ease-out infinite; } .call-avatar.is-listening .call-wave.w2 { animation-delay: .33s; } .call-avatar.is-listening .call-wave.w3 { animation-delay: .66s; }
+.call-avatar.is-thinking .call-avatar-core { animation: orb-breathe .8s ease-in-out infinite; }
+@keyframes call-shake { 0%, 60%, 100% { transform: rotate(0); } 65% { transform: rotate(-8deg); } 70% { transform: rotate(8deg); } 75% { transform: rotate(-6deg); } 80% { transform: rotate(6deg); } 85% { transform: rotate(0); } }
+.call-btn { display: grid; place-items: center; width: 68px; height: 68px; border-radius: 9999px; color: #fff; box-shadow: 0 14px 30px -10px rgba(0, 0, 0, 0.6); transition: transform .15s; }
+.call-btn:hover { transform: scale(1.06); } .call-btn:active { transform: scale(0.96); }
+.call-btn-answer { animation: call-bounce 1.6s ease-in-out infinite; }
+@keyframes call-bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@media (prefers-reduced-motion: reduce) { .call-wave, .call-avatar-core, .call-btn-answer { animation: none !important; } }

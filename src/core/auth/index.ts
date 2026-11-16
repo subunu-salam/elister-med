@@ -6,6 +6,7 @@ import { headers } from "next/headers";
 import { getDbLazy } from "../db/client";
 import { getDb } from "../db/client";
 import { permissionsFor, type RoleKey } from "../rbac/roles";
+import { restrictToModules } from "../rbac/modules";
 import { setCtxResolver, type Ctx } from "../rbac/authorize";
 import { applyDemoDefaults } from "../demo-env";
 
@@ -27,7 +28,8 @@ export function getAuth(): Auth {
   return (instance ??= build());
 }
 
-export type Membership = { userId: string; orgId: string; branchId: string; roles: RoleKey[]; active: boolean; patientId?: string };
+/** modules: business modules the super admin has given this person (see rbac/modules.ts). Absent = everything their role allows. */
+export type Membership = { userId: string; orgId: string; branchId: string; roles: RoleKey[]; active: boolean; patientId?: string; modules?: string[] | null };
 
 /** Display names for user ids (user records are global, not per organisation). Unknown or malformed ids are simply absent. */
 export async function userNames(ids: string[]): Promise<Map<string, string>> {
@@ -42,7 +44,7 @@ export async function loadCtx(userId: string): Promise<Ctx | null> {
   const db = await getDb();
   const m = await db.collection<Membership>("memberships").findOne({ userId, active: true });
   if (!m) return null;
-  return { userId, orgId: m.orgId, branchId: m.branchId, roles: m.roles, permissions: permissionsFor(m.roles), ...(m.patientId ? { patientId: m.patientId } : {}) };
+  return { userId, orgId: m.orgId, branchId: m.branchId, roles: m.roles, permissions: restrictToModules(permissionsFor(m.roles), m.modules), ...(m.patientId ? { patientId: m.patientId } : {}) };
 }
 
 setCtxResolver(async () => {

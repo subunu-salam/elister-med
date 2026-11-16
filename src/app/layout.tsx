@@ -10,6 +10,8 @@ const arabic = IBM_Plex_Sans_Arabic({ variable: "--font-plex-arabic", subsets: [
 export const metadata: Metadata = {
   title: { default: "Elister Med", template: "%s · Elister Med" },
   description: "Elister Med — your trusted family healthcare partner in Dubai. Clinic management platform.",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: { capable: true, title: "Elister", statusBarStyle: "black-translucent" },
 };
 export const viewport: Viewport = { themeColor: [{ media: "(prefers-color-scheme: light)", color: "#e9edf4" }, { media: "(prefers-color-scheme: dark)", color: "#0d1017" }] };
 

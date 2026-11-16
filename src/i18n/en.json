@@ -1,6 +1,7 @@
 {
   "app.name": "Elister Med",
-  "nav.brief": "Daily brief",
+  "nav.brief": "Personal assistant",
+  "nav.admin": "Control centre",
   "nav.dashboard": "Dashboard",
   "nav.patients": "Patients",
   "nav.appointments": "Appointments",
