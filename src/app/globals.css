@@ -250,3 +250,37 @@ body { background-color: var(--bg); background-image: var(--canvas); background-
 .stagger > *:nth-child(7) { animation-delay: 280ms; } .stagger > *:nth-child(8) { animation-delay: 320ms; }
 main .page-in, main > div > section, main > div > div { animation: rise 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
 tbody > tr { transition: background-color 0.15s; }
+
+/* ---------------- AI voice brief ---------------- */
+.brief-hero { background:
+  radial-gradient(55% 120% at 100% 0%, rgba(0, 160, 160, 0.8), transparent 60%),
+  radial-gradient(45% 110% at 0% 100%, rgba(40, 196, 224, 0.45), transparent 60%),
+  linear-gradient(125deg, #072a47 0%, #0b3558 40%, #0a5f8c 75%, #0a7ba5 100%); box-shadow: 0 30px 70px -34px rgba(11, 53, 88, 0.9); }
+.brief-glow { position: absolute; inset: -40%; background: conic-gradient(from 0deg, transparent, rgba(76, 182, 216, 0.18), transparent 30%); animation: spin 18s linear infinite; pointer-events: none; }
+.brief-orb { position: relative; display: grid; place-items: center; width: 168px; height: 168px; border-radius: 9999px; cursor: pointer; }
+.brief-orb-core { position: relative; z-index: 2; display: grid; place-items: center; width: 108px; height: 108px; border-radius: 9999px; color: #0b3558;
+  background: radial-gradient(circle at 32% 28%, #ffffff 0%, #d9f3fb 45%, #8fd6ec 100%); box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.12), 0 18px 40px -10px rgba(0, 0, 0, 0.5), inset 0 -8px 18px rgba(10, 123, 165, 0.25); transition: transform .3s ease; }
+.brief-orb:hover .brief-orb-core { transform: scale(1.04); }
+.brief-orb-ring { position: absolute; inset: 22px; border-radius: 9999px; border: 2px solid rgba(255, 255, 255, 0.35); opacity: 0; }
+.brief-orb.is-speaking .brief-orb-ring { animation: orb-pulse 1.8s ease-out infinite; }
+.brief-orb.is-speaking .brief-orb-ring.r2 { animation-delay: .6s; } .brief-orb.is-speaking .brief-orb-ring.r3 { animation-delay: 1.2s; }
+.brief-orb.is-listening .brief-orb-ring { border-color: rgba(255, 120, 120, 0.7); animation: orb-pulse 1.1s ease-out infinite; }
+.brief-orb.is-listening .brief-orb-ring.r2 { animation-delay: .35s; } .brief-orb.is-listening .brief-orb-ring.r3 { animation-delay: .7s; }
+.brief-orb.is-speaking .brief-orb-core { animation: orb-breathe 1.4s ease-in-out infinite; }
+.brief-orb.is-thinking .brief-orb-core { animation: orb-breathe .9s ease-in-out infinite; }
+@keyframes orb-pulse { 0% { transform: scale(0.85); opacity: .9; } 100% { transform: scale(1.35); opacity: 0; } }
+@keyframes orb-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+.brief-ctl { display: inline-grid; place-items: center; height: 40px; width: 40px; border-radius: 12px; background: rgba(255, 255, 255, 0.12); color: #fff; transition: background .2s; }
+.brief-ctl:hover { background: rgba(255, 255, 255, 0.24); }
+.brief-mic { display: grid; place-items: center; width: 48px; height: 48px; flex-shrink: 0; border-radius: 9999px; color: #fff; background: var(--grad-brand); box-shadow: 0 10px 24px -10px rgba(10, 123, 165, 0.8); transition: transform .2s; }
+.brief-mic:hover { transform: scale(1.06); }
+.brief-mic.is-on { background: linear-gradient(135deg, #e5484d, #c23a2b); animation: orb-breathe 1s ease-in-out infinite; }
+.brief-dot { width: 7px; height: 7px; border-radius: 9999px; background: var(--muted); animation: orb-breathe .9s ease-in-out infinite; opacity: .6; }
+.brief-dot.d2 { animation-delay: .15s; } .brief-dot.d3 { animation-delay: .3s; }
+.brief-bar { transform-origin: bottom; animation: grow .7s cubic-bezier(.2, .8, .2, 1) both; }
+/* dashboard entry card */
+.brief-cta { position: relative; overflow: hidden; }
+.brief-cta .eq span { display: inline-block; width: 3px; margin: 0 1px; border-radius: 2px; background: currentColor; animation: eq 1s ease-in-out infinite; }
+.brief-cta .eq span:nth-child(2) { animation-delay: .2s; } .brief-cta .eq span:nth-child(3) { animation-delay: .4s; } .brief-cta .eq span:nth-child(4) { animation-delay: .1s; }
+@keyframes eq { 0%, 100% { height: 4px; } 50% { height: 16px; } }
+@media (prefers-reduced-motion: reduce) { .brief-glow, .brief-orb-ring, .brief-orb-core, .brief-mic.is-on, .brief-cta .eq span { animation: none !important; } }

@@ -1,9 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
-import { Poppins, IBM_Plex_Sans_Arabic } from "next/font/google";
+import { Poppins, IBM_Plex_Sans_Arabic, Noto_Sans_Malayalam } from "next/font/google";
 import "./globals.css";
 
 const latin = Poppins({ variable: "--font-poppins", subsets: ["latin"], weight: ["300", "400", "500", "600", "700"], display: "swap" });
+const malayalam = Noto_Sans_Malayalam({ variable: "--font-ml", subsets: ["malayalam"], weight: ["400", "500", "600", "700"], display: "swap" });
 const arabic = IBM_Plex_Sans_Arabic({ variable: "--font-plex-arabic", subsets: ["arabic"], weight: ["400", "500", "600", "700"], display: "swap" });
 
 export const metadata: Metadata = {
@@ -17,7 +18,7 @@ const themeScript = `try{var t=localStorage.getItem("theme");if(t==="dark"||(!t&
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${latin.variable} ${arabic.variable} h-full antialiased`}>
+    <html lang="en" suppressHydrationWarning className={`${latin.variable} ${arabic.variable} ${malayalam.variable} h-full antialiased`}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>

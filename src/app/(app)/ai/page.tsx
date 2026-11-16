@@ -21,6 +21,7 @@ export default async function AiPage({ searchParams }: { searchParams: Promise<{
     <div className="space-y-4">
       <PageHeader title="Assistants" sub={`Provider: ${AI_PROVIDER.name} (rule-based, runs inside this system). No external AI service is connected and no patient data leaves the platform.`} />
       {sp.error && <Alert>{sp.error}</Alert>}
+      {can("reports:view") && <a href="/ai/brief" className="block rounded-2xl brand-grad p-5 text-white shadow-card transition hover:-translate-y-0.5"><div className="text-xs font-semibold uppercase tracking-widest text-white/75">New · AI personal assistant</div><div className="mt-1 text-lg font-semibold">Your daily voice brief, in English or മലയാളം</div><div className="text-sm text-white/80">Patients, revenue, receivables and what needs attention in about 3 minutes, then ask follow-up questions by voice.</div></a>}
       <Alert tone="warn">Assistants never diagnose, prescribe, sign, authorise care or make clinical decisions. Anything clinical is a draft that a clinician must review.</Alert>
 
       <div className="grid gap-4 lg:grid-cols-2">

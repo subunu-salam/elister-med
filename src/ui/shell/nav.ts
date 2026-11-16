@@ -6,6 +6,7 @@ export type NavItem = { href: string; labelKey: string; perm: Permission; portal
 /** Hiding items is cosmetic. Every page and action still authorizes server-side. */
 export const NAV: NavItem[] = [
   { href: "/dashboard", labelKey: "nav.dashboard", perm: "dashboard:view", icon: "dash" },
+  { href: "/ai/brief", labelKey: "nav.brief", perm: "reports:view", icon: "ai" },
   { href: "/patients", labelKey: "nav.patients", perm: "patients:view", icon: "users" },
   { href: "/appointments", labelKey: "nav.appointments", perm: "appointments:view", icon: "cal" },
   { href: "/queue", labelKey: "nav.queue", perm: "queue:view", icon: "queue" },

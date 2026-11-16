@@ -1,5 +1,6 @@
 {
   "app.name": "Elister Med",
+  "nav.brief": "Daily brief",
   "nav.dashboard": "Dashboard",
   "nav.patients": "Patients",
   "nav.appointments": "Appointments",
