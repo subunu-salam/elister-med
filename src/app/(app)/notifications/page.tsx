@@ -4,7 +4,7 @@ import { listMyNotifications } from "@/core/notify";
 import { Badge, Card, PageHeader } from "@/ui/kit";
 import { ActionButton, fmtDateTime } from "@/ui/forms";
 
-const HREF: Record<string, (id: string) => string> = { lab_order: (id) => `/laboratory/${id}`, rad_order: () => "/radiology" };
+const HREF: Record<string, (id: string) => string> = { lab_order: (id) => `/laboratory/${id}`, rad_order: () => "/radiology", brief: () => "/ai/brief" };
 
 export default async function NotificationsPage() {
   const ctx = await requireCtx();
