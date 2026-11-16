@@ -1,8 +1,8 @@
 import { apiCtx, respond } from "@/lib/api";
-import { canBrief, markListened } from "@/modules/ai/brief";
+import { canBrief, markCall } from "@/modules/ai/brief";
 
 export const POST = () => respond(async () => {
   const ctx = await apiCtx();
-  if (canBrief(ctx)) await markListened(ctx);
+  if (canBrief(ctx)) await markCall(ctx, "listened");
   return Response.json({ ok: true });
 });

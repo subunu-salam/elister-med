@@ -1,28 +1,67 @@
-# AI personal assistant: daily voice brief
+# Personal AI assistant and the super admin control centre
 
-**Where:** `/ai/brief` (sidebar "Daily brief", dashboard button "Play my 3-minute brief"). Owners and managers only (`dashboard:view` + `reports:view`).
+## The pitch
+"You get your own personal AI assistant. Every evening it calls you, tells you how the clinic did, and answers your questions."
 
-## What it does
-- **3-minute spoken brief** in chapters: patients seen, revenue (vs the day before, the same day last week and last month to date), money to collect (aged, with the first insurers/corporates to chase), today's and tomorrow's bookings, cash and health score, and up to three things that need attention.
-- **English and Malayalam.** Malayalam uses lakh/crore for amounts. A question asked in Malayalam is answered in Malayalam automatically; saying "speak in Malayalam/English" switches language.
-- **Two-way voice chat.** Tap the mic (or type). Answers come first from the brief's figures, then from the books ("how much did we spend on rent last quarter?"), then, only if the natural voice is approved, from Gemini using the same aggregate figures. *Hands-free* keeps the mic open after each answer.
-- **Morning notification.** Vercel Cron builds every eligible user's brief at 08:00 Dubai and posts an in-app notification ("Your 2-minute brief is ready · revenue yesterday … · 3 to look at").
-- **Extras:** attention cards with deep links, 14-day history (dot = listened), WhatsApp/copy summary for partners, chapter skip, 0.9×/1×/1.2× speed, rebuild with latest figures.
+## How the call works
+1. **The phone rings.** At the person's call time (default 20:00 Dubai), Elister sends a web push. The service worker (`public/sw.js`) shows a ringing notification: "📞 Incoming call · Elister AI", with **Answer** and **Decline**, a phone-style vibration, and the headline figure. If Elister is open, a full-screen incoming-call card also appears with Elister's caller tune (synthesised in the browser, no audio file).
+2. **Answer** opens `/ai/call`, a full-screen call with a timer. Elister reads the day's report chapter by chapter, with live captions:
+   - patients seen and appointments
+   - revenue
+   - receivables
+   - tomorrow's bookings
+   - cash
+   - what needs attention
+3. **"Is there anything else you'd like me to explain?"** From then on it's a two-way voice chat. Saying "no" or "that's all" ends the call. The full written report stays at `/ai/brief`.
+4. **Malayalam:** set the language in settings, switch it during the call, or just ask in Malayalam.
+
+Calls after 3 pm report on that day; earlier calls report on the day before.
+"Call me now" on `/ai/brief` (and "Ring now" in the control centre) rings straight away. Use it for demos.
+
+### Getting the ringing notification
+- **Android, Windows, Mac (Chrome or Edge):** Personal assistant → **Turn on calls**.
+- **iPhone/iPad:** Share → **Add to Home Screen**, open Elister from the new icon, then **Turn on calls**. Apple only lets home-screen web apps receive notifications (iOS 16.4+).
+- **Ringtone limit:** a web app can't play its own ringtone through a system notification while it is closed. The phone plays its usual notification sound and vibrates. The custom caller tune plays when Elister is open and on the call screen.
+
+## What the owner can change (Personal assistant page)
+- whether the daily call is on, plus its time, days and language
+- which parts the report covers
+
+Parts outside the person's module access are left out automatically.
+
+## Super admin control centre (`/admin`)
+Only platform super admins and organisation admins can open it.
+- **Who can see what:** a matrix of every person against every module.
+- **Roles** say what someone may do. **Module access** says which parts of the business they can see at all:
+
+  | Module | Covers |
+  |---|---|
+  | Clinical | patients, appointments, queue, medical records, wards |
+  | Lab & radiology | lab orders and results, imaging |
+  | Pharmacy | prescriptions, dispensing |
+  | Billing & insurance | invoices, payments, claims |
+  | Finance & reports | accounts, ledger, reports, AI CFO |
+  | Inventory & purchasing | stock, suppliers, purchase orders |
+  | HR & payroll | staff, leave, payroll, WPS |
+  | CRM & messaging | leads, campaigns, patient messages |
+  | Compliance & audit | policies, incidents, audit trail, integrations |
+  | AI assistant | personal assistant, daily call |
+
+  Module access is enforced in `loadCtx`, so every page and API refuses a closed module. It is not just hidden from the menu.
+- **Add a person:** login, temporary password, roles and modules.
+- **Assistant per person:** schedule, language and sections. You can lock the settings and ring the person now.
+- **Guard rails:**
+  - You can't remove your own admin access.
+  - The organisation always keeps at least one active admin.
+  - Only a platform super admin can grant platform super admin.
+- Every change is recorded in the audit log.
 
 ## Privacy
-The brief never contains patient names or clinical data. Receivables are named only for insurers and corporate clients.
-By default speech uses the device (Web Speech API) and **nothing leaves Elister**. The natural voice sends brief text to Google and is off unless both `GEMINI_API_KEY` and `ELISTER_VOICE_EXTERNAL=1` are set; record the owner's approval before turning it on.
+- The report never contains patient names or clinical data.
+- Pushes are empty: the push service learns nothing about the clinic. The device then asks Elister directly what to show.
+- Speech uses the device's own voice unless the Gemini natural voice is switched on (`GEMINI_API_KEY` + `ELISTER_VOICE_EXTERNAL=1`).
 
 ## Setup (Vercel)
-1. `CRON_SECRET` = any long random string (Vercel attaches it to cron calls automatically).
-2. Optional natural voice: `GEMINI_API_KEY` + `ELISTER_VOICE_EXTERNAL=1`. Recommended for Malayalam, because Chrome on desktop has no Malayalam voice (Edge and Android do).
-3. Deploy. `vercel.json` registers the cron.
-
-## Code
-| File | Role |
-|---|---|
-| `src/modules/ai/brief-core.ts` | Pure: composes the brief (EN/ML), attention rules, follow-up intents. Unit-tested. |
-| `src/modules/ai/brief.ts` | Gathers figures with the user's permissions, daily snapshot (`ai_briefs`), Q&A, cron publisher. |
-| `src/modules/ai/voice-provider.ts` | Optional Gemini TTS + grounded answers. |
-| `src/ui/voice/*` | Player, orb, mic, chat. |
-| `src/app/api/ai/brief/*`, `src/app/api/cron/daily-brief` | Routes. |
+1. `CRON_SECRET` = a long random string. The cron in `vercel.json` runs **hourly**, which needs Vercel Pro. On Hobby, call `/api/cron/daily-brief` hourly from any scheduler, with the header `Authorization: Bearer $CRON_SECRET`.
+2. Run `npx tsx scripts/vapid-keys.ts` and set `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT`.
+3. Optional: `GEMINI_API_KEY` + `ELISTER_VOICE_EXTERNAL=1` for a natural Malayalam voice.

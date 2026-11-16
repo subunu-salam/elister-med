@@ -11,5 +11,5 @@ export type IconKey = keyof typeof ICONS;
 export const ROUTE_ICON: Record<string, IconKey> = {
   dashboard: "dash", patients: "users", appointments: "cal", queue: "queue", billing: "bill", accounts: "calc", accounting: "calc", insurance: "ins", pharmacy: "med", inventory: "box",
   procurement: "truck", laboratory: "flask", radiology: "scan", finance: "bank", books: "book", tax: "tax", hr: "people", crm: "crm", communications: "chat", chat: "team",
-  hospital: "bed", compliance: "check", ai: "ai", portal: "portal", settings: "settings", encounters: "portal", notifications: "bell",
+  hospital: "bed", compliance: "check", ai: "ai", portal: "portal", settings: "settings", admin: "settings", encounters: "portal", notifications: "bell",
 };
