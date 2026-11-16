@@ -73,7 +73,8 @@ export function BriefPlayer({ initial, history: initialHistory }: { initial: Bri
       if (r === "cancelled") return;
     }
     playing.current = false; setMode("idle");
-    if (handsFree && listenOk) void ask();
+    // the report ends by asking "anything else?", so open the mic for the answer
+    if (listenOk) void ask();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brief, rate, handsFree, listenOk]);
 
@@ -100,7 +101,7 @@ export function BriefPlayer({ initial, history: initialHistory }: { initial: Bri
       const res = await sp.speak(a.answer, replyLang, { natural: brief.voice.natural, rate });
       if (res === "cancelled") return;
       setMode("idle");
-      if (handsFree && listenOk && a.intent !== "thanks") void ask();
+      if (handsFree && listenOk && !a.end) void ask();
     } catch (e) { setMsgs((m) => [...m, { who: "elister", text: (e as Error).message, lang: "en" }]); setMode("idle"); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lang, brief.voice.natural, rate, handsFree, listenOk, load]);

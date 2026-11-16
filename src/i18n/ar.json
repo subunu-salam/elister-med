@@ -1,6 +1,7 @@
 {
   "app.name": "اليستر ميد",
-  "nav.brief": "الموجز اليومي",
+  "nav.brief": "المساعد الشخصي",
+  "nav.admin": "مركز التحكم",
   "nav.dashboard": "لوحة التحكم",
   "nav.patients": "المرضى",
   "nav.appointments": "المواعيد",

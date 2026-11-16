@@ -42,19 +42,26 @@ function pickVoice(lang: Lang): SpeechSynthesisVoice | undefined {
 /** Chrome stops long utterances after ~15 s, so speak sentence by sentence. */
 const sentences = (t: string) => t.match(/[^.!?。]+[.!?。]?/g)?.map((s) => s.trim()).filter(Boolean) ?? [t];
 
+/** Browsers refuse to speak before the person has touched the page (e.g. a call answered from a notification). */
+let blocked = false;
 async function speakDevice(text: string, lang: Lang, rate: number, my: number) {
   await voicesReady();
   const voice = pickVoice(lang);
   for (const s of sentences(text)) {
-    if (my !== token) return;
+    if (my !== token || blocked) return;
     await new Promise<void>((res) => {
       const u = new SpeechSynthesisUtterance(s);
       u.lang = voice?.lang ?? LOCALE[lang]; if (voice) u.voice = voice;
       u.rate = rate * (lang === "ml" ? 0.95 : 1); u.pitch = 1;
-      u.onend = () => res(); u.onerror = () => res();
+      u.onend = () => res(); u.onerror = (e) => { if (e.error === "not-allowed") blocked = true; res(); };
       window.speechSynthesis.speak(u);
     });
   }
+}
+/** Call from a tap handler: unlocks audio for the rest of the visit. */
+export function unlock() {
+  blocked = false;
+  try { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; window.speechSynthesis?.speak(u); } catch { /* none */ }
 }
 
 async function fetchNatural(text: string, lang: Lang): Promise<string | null> {
@@ -69,8 +76,8 @@ async function fetchNatural(text: string, lang: Lang): Promise<string | null> {
 /** Starts synthesising the next section while the current one plays, so there is no gap between sections. */
 export function prefetch(text: string, lang: Lang, natural: boolean) { if (natural) void fetchNatural(text, lang).catch(() => null); }
 
-/** Speaks text; resolves when finished or cancelled. Returns "natural" | "device" | "cancelled". */
-export async function speak(text: string, lang: Lang, opts: { natural: boolean; rate?: number; onLevel?: (v: number) => void }): Promise<"natural" | "device" | "cancelled"> {
+/** Speaks text; resolves when finished, cancelled, or blocked (no tap yet: call unlock() from a tap and speak again). */
+export async function speak(text: string, lang: Lang, opts: { natural: boolean; rate?: number }): Promise<"natural" | "device" | "cancelled" | "blocked"> {
   stop();
   const my = token;
   const rate = opts.rate ?? 1;
@@ -78,16 +85,19 @@ export async function speak(text: string, lang: Lang, opts: { natural: boolean; 
     const url = await fetchNatural(text, lang).catch(() => null);
     if (my !== token) return "cancelled";
     if (url) {
+      let refused = false;
       await new Promise<void>((res) => {
         const a = new Audio(url); audio = a; a.playbackRate = rate;
         a.onended = () => res(); a.onerror = () => res(); a.onpause = () => res();
-        a.play().catch(() => res());
+        a.play().catch((e: Error) => { refused = e.name === "NotAllowedError"; res(); });
       });
+      if (refused) return "blocked";
       return my === token ? "natural" : "cancelled";
     }
   }
   if (!window.speechSynthesis) return "cancelled";
   await speakDevice(text, lang, rate, my);
+  if (blocked) return "blocked";
   return my === token ? "device" : "cancelled";
 }
 

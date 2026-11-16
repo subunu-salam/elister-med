@@ -9,6 +9,7 @@ import { getLocale, requireCtx } from "@/lib/session";
 import { NAV } from "@/ui/shell/nav";
 import { Shell } from "@/ui/shell/Shell";
 import { Skeleton } from "@/ui/kit";
+import { CallListener } from "@/ui/voice/CallListener";
 
 async function setLocale() {
   "use server";
@@ -46,6 +47,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       labels={{ language: t(locale, "common.language"), signOut: t(locale, "common.signOut"), search: t(locale, "common.search") }}
       setLocale={setLocale} signOut={signOut} unread={unread} showChat={!isPortal}
     >
+      {!isPortal && <CallListener />}
       <Suspense fallback={<div className="space-y-3"><Skeleton className="h-7 w-56" /><Skeleton className="h-32 w-full" /></div>}>{children}</Suspense>
     </Shell>
   );
