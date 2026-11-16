@@ -125,7 +125,7 @@ export async function createUser(ctx: Ctx, input: { name: string; email: string;
     const other = await (await mems()).findOne({ userId: existing.id });
     if (other) throw new AppError("CONFLICT", other.orgId === ctx.orgId ? "This person already has access; edit them instead" : "This email already belongs to another organisation");
   }
-  const user = existing ?? await auth.internalAdapter.createUser({ email, name, emailVerified: true });
+  const user = existing ?? await auth.internalAdapter.createUser({ email, name, emailVerified: true }, "admin" as never);
   if (!existing) await auth.internalAdapter.linkAccount({ userId: user.id, providerId: "credential", accountId: user.id, password: await auth.password.hash(input.password) });
   const doc = { userId: user.id, orgId: ctx.orgId, branchId: ctx.branchId, roles, modules: cleanModules(input.modules), active: true, title: input.title?.trim() || undefined, updatedAt: new Date() };
   await (await mems()).insertOne(doc as never);
