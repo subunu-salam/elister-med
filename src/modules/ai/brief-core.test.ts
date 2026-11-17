@@ -85,6 +85,9 @@ describe("follow-up questions", () => {
     expect(answerFromFacts("no thanks", facts(), "en").end).toBe(true);
     expect(answerFromFacts("ഇല്ല", facts(), "en").end).toBe(true);
   });
+  it("sends spending questions to the books", () => {
+    expect(detectIntent("how much did we spend on rent last month")).toBe("unknown");
+  });
   it("hands unknown questions back to the server", () => {
     expect(answerFromFacts("how much did we spend on rent", facts(), "en").handled).toBe(false);
   });
