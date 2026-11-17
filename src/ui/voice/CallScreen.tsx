@@ -137,7 +137,8 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
     setPhase("replying");
     await say(L(lang, `No problem${brief.firstName ? `, ${brief.firstName}` : ""}. I'll call you back at ${t}. Talk soon!`, `ശരി${brief.firstName ? ` ${brief.firstName}` : ""}. ${t}-ന് തിരികെ വിളിക്കാം.`), lang);
     live.current = false; void chime("end"); setPhase("snoozed");
-  }, [lang, brief.firstName, say]);
+    setTimeout(() => router.push("/ai/schedule?from=callback"), 2500); // show when it will ring, and let them change it
+  }, [lang, brief.firstName, say, router]);
 
   const askOpening = useCallback(async () => {
     setPhase("opening");
@@ -268,12 +269,13 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
           <div className="mb-6 mt-8 space-y-3 text-center">
             <p className="text-lg font-semibold">{L(lang, `Elister will call you back at ${callbackAt ?? ""}`, `${callbackAt ?? ""}-ന് എലിസ്റ്റർ തിരികെ വിളിക്കും`)}</p>
             <p className="text-sm text-white/70">{L(lang, "You'll get the same incoming call on this device.", "ഇതേ ഉപകരണത്തിൽ കോൾ വരും.")}</p>
-            <Link href="/dashboard" className="inline-flex rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-[#0b3558]">{L(lang, "Back to Elister", "എലിസ്റ്ററിലേക്ക് മടങ്ങുക")}</Link>
+            <Link href="/ai/schedule?from=callback" className="inline-flex rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-[#0b3558]">{L(lang, "View scheduled calls", "ഷെഡ്യൂൾ ചെയ്ത കോളുകൾ")}</Link>
           </div>
         ) : phase === "ended" ? (
           <div className="mb-6 mt-8 space-y-3 text-center">
             <p className="text-sm text-white/70">{L(lang, `Call lasted ${mmss(secs)}. Your full report is saved.`, `കോൾ ${mmss(secs)} നീണ്ടു. പൂർണ്ണ റിപ്പോർട്ട് സേവ് ചെയ്തിട്ടുണ്ട്.`)}</p>
             <div className="flex flex-wrap justify-center gap-2">
+              <Link href="/ai/schedule" className="inline-flex items-center gap-2 rounded-2xl bg-white/10 px-5 py-3 text-sm font-semibold">{L(lang, "Next call", "അടുത്ത കോൾ")}</Link>
               <Link href="/ai/brief" className="inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-[#0b3558]"><FileText size={16} />{L(lang, "Open the full report", "പൂർണ്ണ റിപ്പോർട്ട് തുറക്കുക")}</Link>
               <button onClick={() => { setLines([]); setChapter(0); setSecs(0); started.current = null; void connect(); }} className="inline-flex items-center gap-2 rounded-2xl bg-white/10 px-5 py-3 text-sm font-semibold"><Phone size={16} />{L(lang, "Call again", "വീണ്ടും വിളിക്കുക")}</button>
             </div>
