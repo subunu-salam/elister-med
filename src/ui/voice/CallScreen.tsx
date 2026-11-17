@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { FileText, Keyboard, Mic, MicOff, Pause, Phone, PhoneOff, Play, Send, SkipForward, Volume2 } from "lucide-react";
 import type { Brief, Lang, VoiceAnswer } from "@/modules/ai/brief-core";
@@ -146,7 +147,12 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
   const speaking = phase === "report" || phase === "replying";
   const font = lang === "ml" ? ML_FONT : undefined;
 
-  return (
+  // Drawn straight into <body>: inside the app shell an ancestor's animation/transform would trap a fixed layer under the page.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); document.body.style.overflow = "hidden"; return () => { document.body.style.overflow = ""; }; }, []);
+  if (!mounted) return null;
+
+  return createPortal(
     <div className="call-screen" style={font}>
       <div className="call-bg" aria-hidden />
       <div className="relative z-10 mx-auto flex min-h-[calc(100dvh-2rem)] max-w-3xl flex-col px-4 py-6 text-white">
@@ -232,7 +238,8 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
