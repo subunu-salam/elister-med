@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { allowedSections, answerFromFacts, attention, composeBrief, detectIntent, money, shareText, type BriefFacts } from "./brief-core";
+import { allowedSections, answerFromFacts, callOpening, parseOpeningReply, attention, composeBrief, detectIntent, money, shareText, type BriefFacts } from "./brief-core";
 
 const facts = (o: Partial<BriefFacts> = {}): BriefFacts => ({
   ymd: "2026-11-16", dow: 1, period: "today", hour: 20, recipient: "Dr. Salam Khan (Owner)", org: "Elister Med",
@@ -26,7 +26,7 @@ describe("composeBrief", () => {
     const b = composeBrief(facts(), "en");
     expect(b.sections[0].text).toContain("Good evening, Salam.");
     expect(b.sections.map((s) => s.key)).toEqual(["intro", "patients", "revenue", "receivables", "upcoming", "cash", "attention", "close"]);
-    expect(b.sections.at(-1)!.text).toContain("anything else");
+    expect(b.sections.at(-1)!.text).toContain("anything you'd like to ask");
     expect(b.seconds).toBeGreaterThan(60);
     expect(b.seconds).toBeLessThanOrEqual(200);
   });
@@ -97,4 +97,30 @@ it("builds a WhatsApp summary with KPIs and issues", () => {
   const t = shareText(composeBrief(facts(), "en"));
   expect(t).toContain("Revenue today: AED 18.4K");
   expect(t).toContain("⚠");
+});
+
+describe("the call opening", () => {
+  it("greets the owner by first name and offers to call back", () => {
+    const t = callOpening(facts({ recipient: "Salim" }), "en");
+    expect(t).toContain("Hi Salim, how are you doing?");
+    expect(t).toContain("call you back in 30 minutes");
+    expect(callOpening(facts({ recipient: "Salim" }), "ml")).toContain("സുഖമാണോ");
+  });
+  it("understands carry on and call back, in English and Malayalam", () => {
+    expect(parseOpeningReply("I'm good, go ahead")).toBe("continue");
+    expect(parseOpeningReply("yes please carry on")).toBe("continue");
+    expect(parseOpeningReply("I'm busy, call me back later")).toBe("later");
+    expect(parseOpeningReply("call me in 30 minutes")).toBe("later");
+    expect(parseOpeningReply("ശരി, പറയൂ")).toBe("continue");
+    expect(parseOpeningReply("പിന്നെ വിളിക്കൂ")).toBe("later");
+    expect(parseOpeningReply("hmm")).toBe("unclear");
+  });
+  it("closes the report by name and invites questions", () => {
+    expect(composeBrief(facts({ recipient: "Salim" }), "en").sections.at(-1)!.text).toBe("That's the full picture, Salim. Is there anything you'd like to ask me?");
+  });
+  it("answers how the week went", () => {
+    const a = answerFromFacts("how was this week?", facts({ week: { visits: 96, prevVisits: 80, revenue: 52000, prevRevenue: 47000, newPatients: 14, busiest: { ymd: "2026-11-16", dow: 1, visits: 21 } } }), "en");
+    expect(a.answer).toContain("96 patients");
+    expect(a.answer).toContain("Monday");
+  });
 });

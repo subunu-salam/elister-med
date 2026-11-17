@@ -41,6 +41,8 @@ export type BriefFacts = {
   next: { when: "today" | "tomorrow"; dow: number; booked: number; expected: number | null; firstAt?: string; busiest?: { name: string; count: number }; after: number };
   /** Present only for users who can see the books. */
   cash?: { balance: number; score: number; grade: string; runwayMonths: number | null; breachWeek: number | null; lowest: number; anomalies: number; duplicates: number; duplicateAmount: number };
+  /** Last 7 days (ending with the reported day) against the 7 before; for "how was this week" questions. */
+  week?: { visits: number; prevVisits: number; revenue: number; prevRevenue: number; newPatients: number; busiest?: { ymd: string; dow: number; visits: number } };
 };
 
 export type AlertLevel = "critical" | "warn" | "good";
@@ -93,7 +95,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 const greet = (hour: number, lang: Lang) => lang === "ml"
   ? (hour < 12 ? "സുപ്രഭാതം" : hour < 17 ? "നമസ്കാരം" : "ശുഭസന്ധ്യ")
   : (hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening");
-const firstName = (n: string) => n.replace(/\(.*?\)/g, "").trim().split(/\s+/).find((w) => w && !/^(dr|mr|mrs|ms|prof)\.?$/i.test(w)) ?? "";
+export const firstName = (n: string) => n.replace(/\(.*?\)/g, "").trim().split(/\s+/).find((w) => w && !/^(dr|mr|mrs|ms|prof)\.?$/i.test(w)) ?? "";
 
 /** Which chapters this person may hear: their own choice, limited by what their access allows. */
 export function allowedSections(f: Pick<BriefFacts, "scope" | "cash">, chosen?: readonly SectionKey[]): SectionKey[] {
@@ -157,6 +159,26 @@ export const CLOSING_QUESTION: Record<Lang, string> = {
   en: "That's your summary. Is there anything else you'd like me to explain?",
   ml: "ഇതാണ് ഇന്നത്തെ സംഗ്രഹം. ഇനി എന്തെങ്കിലും കൂടുതൽ വിശദീകരിക്കണോ?",
 };
+const closing = (name: string, lang: Lang) => lang === "ml"
+  ? `ഇതാണ് ${name ? `${name}, ` : ""}ഇന്നത്തെ പൂർണ്ണ റിപ്പോർട്ട്. എന്തെങ്കിലും ചോദിക്കാനുണ്ടോ?`
+  : `That's the full picture${name ? `, ${name}` : ""}. Is there anything you'd like to ask me?`;
+
+/** First thing the assistant says when the call is answered: a personal hello, then "shall I carry on, or call you back in 30 minutes?" */
+export function callOpening(f: Pick<BriefFacts, "recipient" | "org" | "period" | "hour">, lang: Lang, snoozeMinutes = 30): string {
+  const n = firstName(f.recipient);
+  const T = f.period === "today";
+  return lang === "ml"
+    ? `ഹായ് ${n || ""}, സുഖമാണോ? ഞാൻ നിങ്ങളുടെ പേഴ്സണൽ അസിസ്റ്റന്റ് എലിസ്റ്റർ ആണ്. ${f.org}-ൽ ${T ? "ഇന്ന്" : "ഇന്നലെ"} എന്തൊക്കെ നടന്നു എന്നതിന്റെ ഒരു ചെറിയ അപ്ഡേറ്റ് തരാനാണ് വിളിച്ചത്. തുടരട്ടെ, അതോ ${snoozeMinutes} മിനിറ്റ് കഴിഞ്ഞ് തിരികെ വിളിക്കണോ?`
+    : `Hi${n ? ` ${n}` : ""}, how are you doing? This is Elister, your personal assistant. I just wanted to give you a quick update on what happened ${T ? "today" : "yesterday"} at ${f.org}. Shall I carry on, or would you like me to call you back in ${snoozeMinutes} minutes?`;
+}
+
+/** The owner's answer to the opening question: carry on, call back later, or not clear yet. */
+export function parseOpeningReply(q: string): "continue" | "later" | "unclear" {
+  const t = q.toLowerCase();
+  if (/\b(later|call (me )?back|ring (me )?back|busy|not now|in (half an hour|30|thirty)|after (30|thirty|half)|snooze|remind)\b|പിന്നെ|തിരികെ വിളി|തിരിച്ചു വിളി|തിരക്ക്|പിന്നീട്/.test(t)) return "later";
+  if (/\b(yes|yeah|yep|sure|ok(ay)?|go ahead|go on|carry on|continue|please do|tell me|start|fine|good|great|doing well|i'?m (good|fine|well))\b|അതെ|ശരി|തുടര|പറയൂ|പറഞ്ഞോ|സുഖം|ഓക്കെ/.test(t)) return "continue";
+  return "unclear";
+}
 
 export function composeBrief(f: BriefFacts, lang: Lang, opts: { sections?: readonly SectionKey[] } = {}): Brief {
   const ml = lang === "ml";
@@ -253,7 +275,7 @@ export function composeBrief(f: BriefFacts, lang: Lang, opts: { sections?: reado
       issues.map((a, i) => (ml ? `${i + 1}. ${a.text}` : `${["First", "Second", "Third"][i]}, ${a.text.charAt(0).toLowerCase()}${a.text.slice(1)}`)).join(" ") + (wins.length ? ` ${wins[0].text}` : "")
     : (ml ? "അടിയന്തരമായി ശ്രദ്ധിക്കേണ്ടതൊന്നുമില്ല. " : "Nothing urgent needs your attention. ") + (wins.length ? wins[0].text : ""));
 
-  push("close", "Anything else?", "മറ്റെന്തെങ്കിലും?", CLOSING_QUESTION[lang]);
+  push("close", "Anything else?", "മറ്റെന്തെങ്കിലും?", closing(first, lang));
 
   const text = s.map((x) => x.text).join("\n\n");
   const words = text.split(/\s+/).filter(Boolean).length;
@@ -293,7 +315,7 @@ export function shareText(b: Brief): string {
 
 // ---------------------------------------------------------------- follow-up questions
 
-export type Intent = "revenue" | "patients" | "today" | "tomorrow" | "receivables" | "profit" | "cash" | "doctor" | "noshow" | "attention" | "month" | "repeat" | "help" | "lang_en" | "lang_ml" | "greeting" | "done" | "unknown";
+export type Intent = "week" | "revenue" | "patients" | "today" | "tomorrow" | "receivables" | "profit" | "cash" | "doctor" | "noshow" | "attention" | "month" | "repeat" | "help" | "lang_en" | "lang_ml" | "greeting" | "done" | "unknown";
 
 /** English and Malayalam (script and common Manglish) cue words. Order matters: more specific intents first. */
 const CUES: [Intent, RegExp][] = [
@@ -311,6 +333,7 @@ const CUES: [Intent, RegExp][] = [
   ["profit", /\b(profit|margin|net|loss|earning)\b|ലാഭം|നഷ്ടം|labham/i],
   ["doctor", /\b(doctor|dr\.?|physician|top performer|best)\b|ഡോക്ടർ/i],
   ["attention", /\b(attention|worry|problem|issue|risk|alert|concern|wrong)\b|ശ്രദ്ധിക്കേണ്ട|പ്രശ്നം|അപകട/i],
+  ["week", /\b(this week|last 7 days|past week|weekly|the week|busiest day)\b|ഈ ആഴ്ച|ആഴ്ച/i],
   ["month", /\b(month|mtd|this month|compare|comparison|trend)\b|മാസം/i],
   ["today", /\b(today|now|this morning|schedule|booked|appointments?)\b|ഇന്ന്|ഇന്നത്തെ|അപ്പോയിന്റ്മെന്റ്|innu/i],
   ["patients", /\b(patients?|footfall|visits?|new patients?)\b|രോഗി|പേഷ്യന്റ്|rogi/i],
@@ -376,6 +399,16 @@ export function answerFromFacts(q: string, f: BriefFacts, asked: Lang): VoiceAns
         `${f.day.noShows} രോഗികൾ വന്നില്ല, ബുക്കിംഗിന്റെ ${rate} ശതമാനം. കാരണം സിസ്റ്റം രേഖപ്പെടുത്തുന്നില്ല; സാധാരണയായി ദൂരെയുള്ള ബുക്കിംഗും ഓർമ്മപ്പെടുത്തൽ ഇല്ലാത്തതുമാണ് കാരണങ്ങൾ.`)) + more, "/appointments");
     }
     case "attention": return r((composeBrief(f, lang, { sections: ["attention"] }).sections.find((x) => x.key === "attention")?.text ?? "") + more);
+    case "week": {
+      const w = f.week;
+      if (!w) return r(say("I don't have the weekly figures yet.", "ആഴ്ചയിലെ കണക്കുകൾ ഇപ്പോൾ ലഭ്യമല്ല."));
+      const EN = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"], ML = ["ഞായറാഴ്ച", "തിങ്കളാഴ്ച", "ചൊവ്വാഴ്ച", "ബുധനാഴ്ച", "വ്യാഴാഴ്ച", "വെള്ളിയാഴ്ച", "ശനിയാഴ്ച"];
+      const parts: string[] = [];
+      if (f.scope.clinical) parts.push(say(`Over the last 7 days the clinic saw ${w.visits} patients${w.prevVisits ? `, ${change(pct(w.visits, w.prevVisits), lang)} on the week before` : ""}, and ${w.newPatients} were new.${w.busiest ? ` The busiest day was ${EN[w.busiest.dow]}, with ${w.busiest.visits} visits.` : ""}`,
+        `കഴിഞ്ഞ 7 ദിവസത്തിൽ ${w.visits} രോഗികളെ കണ്ടു${w.prevVisits ? `, അതിന് മുമ്പുള്ള ആഴ്ചയേക്കാൾ ${change(pct(w.visits, w.prevVisits), lang)}` : ""}; ${w.newPatients} പേർ പുതിയവരാണ്.${w.busiest ? ` ഏറ്റവും തിരക്കുള്ള ദിവസം ${ML[w.busiest.dow]} ആയിരുന്നു, ${w.busiest.visits} പേർ.` : ""}`));
+      if (f.scope.finance) parts.push(say(`Revenue for the week was ${money(w.revenue, lang)}${w.prevRevenue ? `, ${change(pct(w.revenue, w.prevRevenue), lang)}` : ""}.`, `ആഴ്ചയിലെ വരുമാനം ${money(w.revenue, lang)}${w.prevRevenue ? `, ${change(pct(w.revenue, w.prevRevenue), lang)}` : ""}.`));
+      return r((parts.join(" ") || noAccess) + more, "/dashboard");
+    }
     case "month": return r(fin(say(
       `Month to date, revenue is ${money(f.mtd.revenue, lang)}${f.mtd.revenuePrev !== null ? ` against ${money(f.mtd.revenuePrev, lang)} at the same point last month, ${change(pct(f.mtd.revenue, f.mtd.revenuePrev), lang)}` : ""}, from ${f.mtd.appts} appointments. Net profit is ${money(f.mtd.netProfit, lang)}.`,
       `ഈ മാസം ഇതുവരെ ${f.mtd.appts} അപ്പോയിന്റ്മെന്റുകളിൽ നിന്ന് വരുമാനം ${money(f.mtd.revenue, lang)}${f.mtd.revenuePrev !== null ? `; കഴിഞ്ഞ മാസം ഇതേ സമയം ${money(f.mtd.revenuePrev, lang)} ആയിരുന്നു, ${change(pct(f.mtd.revenue, f.mtd.revenuePrev), lang)}` : ""}. അറ്റാദായം ${money(f.mtd.netProfit, lang)}.`)) + more, "/finance");

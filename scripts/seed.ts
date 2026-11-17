@@ -13,7 +13,7 @@ import { permissionsFor, type RoleKey } from "../src/core/rbac/roles";
 const PASSWORD = process.env.SEED_PASSWORD ?? "Demo-Only-Pass-2026!";
 type U = { email: string; name: string; roles: RoleKey[]; userKey?: string; portal?: boolean };
 const USERS: U[] = [
-  { email: "admin@demo.local", name: "Demo Admin", roles: ["org_admin"] },
+  { email: "admin@demo.local", name: "Salim", roles: ["org_admin"] },
   { email: "manager@demo.local", name: "Demo Clinic Manager", roles: ["clinic_manager"] },
   { email: "director@demo.local", name: "Demo Medical Director", roles: ["medical_director"] },
   { email: "reception@demo.local", name: "Demo Receptionist", roles: ["receptionist"] },
@@ -51,6 +51,9 @@ export async function seedAll(opts: { activity?: boolean } = {}) {
     if (!user) {
       user = await ctx.internalAdapter.createUser({ email: u.email, name: u.name, emailVerified: true }, "seed" as never);
       await ctx.internalAdapter.linkAccount({ userId: user.id, providerId: "credential", accountId: user.id, password: await ctx.password.hash(PASSWORD) });
+    } else if (u.email === "admin@demo.local" && user.name === "Demo Admin") {
+      // the demo owner has a real-sounding name so the personal assistant can greet him ("Hi Salim")
+      await db.collection("user").updateOne({ email: u.email }, { $set: { name: u.name } });
     }
     await db.collection("memberships").updateOne(
       { userId: user.id },

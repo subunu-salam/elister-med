@@ -30,7 +30,20 @@ export function CallListener() {
     const onLocal = (e: Event) => setCall((e as CustomEvent<Info>).detail);
     navigator.serviceWorker?.addEventListener("message", onSw);
     window.addEventListener(RING_EVENT, onLocal);
-    return () => { navigator.serviceWorker?.removeEventListener("message", onSw); window.removeEventListener(RING_EVENT, onLocal); };
+    // "Call me back in 30 minutes": if Elister is open when the time comes, ring here too (push rings it when closed).
+    let cb: ReturnType<typeof setTimeout> | undefined;
+    const arm = () => {
+      if (cb) clearTimeout(cb);
+      try {
+        const at = Number(localStorage.getItem("elister:callback") ?? 0);
+        if (at > Date.now() - 10 * 60_000) cb = setTimeout(() => { localStorage.removeItem("elister:callback"); setCall({ title: "Elister · Your personal AI assistant", body: "Calling you back with today's update, as you asked." }); }, Math.max(0, at - Date.now()));
+      } catch { /* storage unavailable */ }
+    };
+    arm();
+    window.addEventListener("elister:callback-set", arm);
+    return () => {
+      if (cb) clearTimeout(cb);
+      window.removeEventListener("elister:callback-set", arm); navigator.serviceWorker?.removeEventListener("message", onSw); window.removeEventListener(RING_EVENT, onLocal); };
   }, []);
 
   useEffect(() => {

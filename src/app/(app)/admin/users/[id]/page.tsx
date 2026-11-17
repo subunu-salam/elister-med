@@ -30,6 +30,7 @@ export default async function AdminUserPage({ params, searchParams }: { params: 
       <form action={saveAccess} className="space-y-6 rounded-3xl border border-border bg-surface p-5 shadow-card">
         <input type="hidden" name="userId" value={u.userId} />
         <div className="flex flex-wrap items-end gap-4">
+          <label className="flex-1 text-sm"><span className="mb-1 block font-medium">Full name</span><input name="name" defaultValue={u.name} required minLength={2} className="w-full rounded-xl border border-border bg-surface-2 px-3 py-2" /><span className="mt-1 block text-xs text-muted">The assistant greets them by first name.</span></label>
           <label className="flex-1 text-sm"><span className="mb-1 block font-medium">Job title (optional)</span><input name="title" defaultValue={u.title} placeholder="e.g. Investor, Group CFO" className="w-full rounded-xl border border-border bg-surface-2 px-3 py-2" /></label>
           <label className="flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm"><input type="checkbox" name="active" defaultChecked={u.active} disabled={self} className="size-4 accent-[var(--primary)]" />Can sign in</label>
           {self && <input type="hidden" name="active" value="on" />}

@@ -12,7 +12,7 @@ export async function saveAccess(fd: FormData) {
   const ctx = await requireCtx();
   const id = s(fd, "userId");
   await run(`/admin/users/${id}`, async () => {
-    await updateAccess(ctx, id, { roles: all(fd, "roles"), modules: modules(fd), active: fd.get("active") === "on", title: s(fd, "title") });
+    await updateAccess(ctx, id, { roles: all(fd, "roles"), modules: modules(fd), active: fd.get("active") === "on", title: s(fd, "title"), name: s(fd, "name") });
     return `/admin/users/${id}?saved=access`;
   });
 }

@@ -4,7 +4,7 @@ import { ringDevices } from "@/modules/ai/push";
 export const maxDuration = 300;
 
 /**
- * Called by Vercel Cron (see vercel.json; daily at 20:00 Dubai on the Hobby plan): rings everyone whose call time has passed today and who has not been called yet.
+ * Called by Vercel Cron (vercel.json: daily at 18:00 Dubai) and by the GitHub Actions job (.github/workflows/assistant-calls.yml, every 5 minutes): rings everyone whose call time has passed today and who has not been called yet.
  * Vercel sends "Authorization: Bearer $CRON_SECRET"; anything else is refused, and nothing runs unless CRON_SECRET is set.
  * For exact per-person times, run it hourly: change the schedule to "0 * * * *" on Vercel Pro, or call this URL hourly from any scheduler.
  */
