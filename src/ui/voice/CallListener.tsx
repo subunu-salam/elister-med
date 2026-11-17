@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Phone, PhoneOff } from "lucide-react";
 import { startRingtone, stopRingtone } from "./ringtone";
@@ -48,7 +49,7 @@ export function CallListener() {
   };
   const decline = () => { setCall(null); void fetch("/api/ai/call/decline", { method: "POST" }).catch(() => null); };
 
-  return (
+  return createPortal(
     <div className="call-overlay" role="alertdialog" aria-label="Incoming call from Elister AI" onClick={() => void startRingtone()}>
       <div className="call-card">
         <div className="call-avatar is-ringing"><span className="call-avatar-core">E</span><span className="call-wave" /><span className="call-wave w2" /><span className="call-wave w3" /></div>
@@ -61,6 +62,7 @@ export function CallListener() {
           <div className="text-center"><button onClick={() => void answer()} className="call-btn call-btn-answer bg-[#1fbf75]" aria-label="Answer"><Phone size={26} /></button><div className="mt-2 text-xs text-white/70">Answer</div></div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
