@@ -58,9 +58,11 @@ async function main() {
   const days: string[] = [];
   for (let d = addDays(today, -BACKFILL_DAYS); d <= tomorrow; d = addDays(d, 1)) if (dow(d) !== 0) days.push(d); // clinic closed Sundays
   const done = new Set((await markers.find({ orgId: ORG, key: { $regex: "^rolling:" } }).toArray()).map((m) => m.key.slice(8)));
-  const todo = days.filter((d) => !done.has(d) || d === today || d === tomorrow);
+  // Newest first: tomorrow, today, yesterday… are what the dashboard and the assistant's report talk about.
+  const todo = days.filter((d) => !done.has(d) || d === today || d === tomorrow).reverse();
+  const deadline = RealDate.now() + Number(process.env.SEED_ROLLING_BUDGET_MIN ?? 15) * 60_000; // never let a build time out
   if (!todo.length) { console.log("seed-rolling: up to date."); return; }
-  console.log(`▶ seed-rolling: ${todo.length} day(s), ${todo[0]} → ${todo[todo.length - 1]}`);
+  console.log(`▶ seed-rolling: ${todo.length} day(s), newest first (${todo[0]} back to ${todo[todo.length - 1]})`);
 
   // a pool of returning patients, grown a little every day
   const pool: string[] = (await tenantCol<{ _id: string }>(ORG, "patients").find({} as never, { projection: { _id: 1 }, limit: 400 })).map((p) => p._id);
@@ -68,6 +70,7 @@ async function main() {
   let visits = 0, paid = 0;
   try {
     for (const day of todo) {
+      if (RealDate.now() > deadline) { console.log(`  seed-rolling: time budget used, stopping before ${day} (next deploy continues).`); break; }
       const R = rng(Number(day.replace(/-/g, "")));
       const isToday = day === today, isTomorrow = day === tomorrow;
       // Already-seeded today/tomorrow: only add what is missing (re-runs during the day must not double the book).
@@ -134,6 +137,7 @@ async function main() {
         const ok = await safe("payment", () => recordPayment(reg, { invoiceId: inv._id, method: (["cash", "card", "card", "card", "bank"] as const)[Math.floor(R() * 5)], amount: (part ? total / 2 : total).toFixed(2), idempotencyKey: `roll-${appt._id}` }));
         if (ok) paid++;
       }
+      console.log(`  ${day}: done (${visits} visits so far)`);
       if (!isToday && !isTomorrow) await markers.updateOne({ orgId: ORG, key: `rolling:${day}` }, { $set: { at: new RealDate() } }, { upsert: true });
     }
   } finally { uninstallClock(); }
