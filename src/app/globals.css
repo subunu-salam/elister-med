@@ -286,12 +286,12 @@ tbody > tr { transition: background-color 0.15s; }
 @media (prefers-reduced-motion: reduce) { .brief-glow, .brief-orb-ring, .brief-orb-core, .brief-mic.is-on, .brief-cta .eq span { animation: none !important; } }
 
 /* ---------------- assistant call ---------------- */
-.call-screen { position: fixed; inset: 0; z-index: 60; overflow-y: auto; background: #061d33; }
+.call-screen { position: fixed; inset: 0; z-index: 1000; overflow-y: auto; background: #061d33; }
 .call-bg { position: fixed; inset: 0; background:
   radial-gradient(60% 50% at 50% 18%, rgba(40, 196, 224, 0.35), transparent 70%),
   radial-gradient(50% 40% at 85% 90%, rgba(0, 160, 160, 0.35), transparent 70%),
   linear-gradient(180deg, #072a47 0%, #061d33 60%, #04121f 100%); }
-.call-overlay { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; padding: 1rem; background: rgba(4, 18, 31, 0.86); backdrop-filter: blur(14px); animation: rise .25s ease-out both; }
+.call-overlay { position: fixed; inset: 0; z-index: 1001; display: grid; place-items: center; padding: 1rem; background: rgba(4, 18, 31, 0.86); backdrop-filter: blur(14px); animation: rise .25s ease-out both; }
 .call-card { width: 100%; max-width: 380px; border-radius: 32px; padding: 40px 24px 32px; text-align: center; background: linear-gradient(180deg, #0b3558, #061d33); box-shadow: 0 40px 90px -30px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
 .call-avatar { position: relative; margin-inline: auto; display: grid; place-items: center; width: 132px; height: 132px; }
 .call-avatar-core { position: relative; z-index: 2; display: grid; place-items: center; width: 112px; height: 112px; border-radius: 9999px; font-size: 44px; font-weight: 700; color: #0b3558;

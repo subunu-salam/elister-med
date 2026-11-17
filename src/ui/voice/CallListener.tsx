@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Phone, PhoneOff } from "lucide-react";
 import { startRingtone, stopRingtone } from "./ringtone";
@@ -29,7 +30,20 @@ export function CallListener() {
     const onLocal = (e: Event) => setCall((e as CustomEvent<Info>).detail);
     navigator.serviceWorker?.addEventListener("message", onSw);
     window.addEventListener(RING_EVENT, onLocal);
-    return () => { navigator.serviceWorker?.removeEventListener("message", onSw); window.removeEventListener(RING_EVENT, onLocal); };
+    // "Call me back in 30 minutes": if Elister is open when the time comes, ring here too (push rings it when closed).
+    let cb: ReturnType<typeof setTimeout> | undefined;
+    const arm = () => {
+      if (cb) clearTimeout(cb);
+      try {
+        const at = Number(localStorage.getItem("elister:callback") ?? 0);
+        if (at > Date.now() - 10 * 60_000) cb = setTimeout(() => { localStorage.removeItem("elister:callback"); setCall({ title: "Elister · Your personal AI assistant", body: "Calling you back with today's update, as you asked." }); }, Math.max(0, at - Date.now()));
+      } catch { /* storage unavailable */ }
+    };
+    arm();
+    window.addEventListener("elister:callback-set", arm);
+    return () => {
+      if (cb) clearTimeout(cb);
+      window.removeEventListener("elister:callback-set", arm); navigator.serviceWorker?.removeEventListener("message", onSw); window.removeEventListener(RING_EVENT, onLocal); };
   }, []);
 
   useEffect(() => {
@@ -48,7 +62,7 @@ export function CallListener() {
   };
   const decline = () => { setCall(null); void fetch("/api/ai/call/decline", { method: "POST" }).catch(() => null); };
 
-  return (
+  return createPortal(
     <div className="call-overlay" role="alertdialog" aria-label="Incoming call from Elister AI" onClick={() => void startRingtone()}>
       <div className="call-card">
         <div className="call-avatar is-ringing"><span className="call-avatar-core">E</span><span className="call-wave" /><span className="call-wave w2" /><span className="call-wave w3" /></div>
@@ -61,6 +75,7 @@ export function CallListener() {
           <div className="text-center"><button onClick={() => void answer()} className="call-btn call-btn-answer bg-[#1fbf75]" aria-label="Answer"><Phone size={26} /></button><div className="mt-2 text-xs text-white/70">Answer</div></div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

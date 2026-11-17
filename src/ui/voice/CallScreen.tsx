@@ -1,14 +1,17 @@
 "use client";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { FileText, Keyboard, Mic, MicOff, Pause, Phone, PhoneOff, Play, Send, SkipForward, Volume2 } from "lucide-react";
 import type { Brief, Lang, VoiceAnswer } from "@/modules/ai/brief-core";
 import * as sp from "./speech";
+import { parseOpeningReply } from "@/modules/ai/brief-core";
 import { chime, startRingtone, stopRingtone } from "./ringtone";
 
-export type CallBrief = Brief & { voice: { natural: boolean } };
-type Phase = "ringing" | "report" | "paused" | "listening" | "thinking" | "replying" | "tap" | "ended";
+export type CallBrief = Brief & { voice: { natural: boolean }; opening?: string; firstName?: string };
+type Phase = "ringing" | "opening" | "report" | "paused" | "listening" | "thinking" | "replying" | "tap" | "ended" | "snoozed";
+export const CALLBACK_KEY = "elister:callback";
 type Line = { who: "elister" | "you"; text: string; lang: Lang; href?: string };
 
 const ML_FONT = { fontFamily: "var(--font-ml), var(--font-poppins), system-ui, sans-serif" };
@@ -120,6 +123,38 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
     void listenLoop(lang);
   }, [brief, say, listenLoop, lang]);
 
+  // ------------------------------------------------ the opening: "Hi Salim… shall I carry on, or call you back in 30 minutes?"
+  const [callbackAt, setCallbackAt] = useState<string | null>(null);
+  const tries = useRef(0);
+  const carryOn = useCallback(() => { sp.stop(); sp.stopListening(); void playReport(1); }, [playReport]); // section 0 is the hello, already said
+  const callBackLater = useCallback(async () => {
+    sp.stop(); sp.stopListening();
+    let until = new Date(Date.now() + 30 * 60_000);
+    try { const r = await fetch("/api/ai/call/snooze", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ minutes: 30 }) }); if (r.ok) until = new Date((await r.json()).until); } catch { /* the in-app reminder below still works */ }
+    try { localStorage.setItem(CALLBACK_KEY, String(until.getTime())); window.dispatchEvent(new Event("elister:callback-set")); } catch { /* private mode */ }
+    const t = until.toLocaleTimeString(lang === "ml" ? "ml-IN" : "en-GB", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Dubai" });
+    setCallbackAt(t);
+    setPhase("replying");
+    await say(L(lang, `No problem${brief.firstName ? `, ${brief.firstName}` : ""}. I'll call you back at ${t}. Talk soon!`, `ശരി${brief.firstName ? ` ${brief.firstName}` : ""}. ${t}-ന് തിരികെ വിളിക്കാം.`), lang);
+    live.current = false; void chime("end"); setPhase("snoozed");
+  }, [lang, brief.firstName, say]);
+
+  const askOpening = useCallback(async () => {
+    setPhase("opening");
+    const text = tries.current === 0 ? (brief.opening ?? brief.sections[0]?.text ?? "") : L(lang, "Sorry, I didn't catch that. Shall I carry on, or call you back in 30 minutes?", "ക്ഷമിക്കണം, കേട്ടില്ല. തുടരട്ടെ, അതോ 30 മിനിറ്റ് കഴിഞ്ഞ് വിളിക്കണോ?");
+    if (!(await say(text, lang))) return;
+    setPhase("opening");
+    if (!canListen) return; // buttons on screen
+    let q = "";
+    try { q = await sp.listen(lang, setPartial); } catch { return; }
+    if (!live.current) return;
+    if (q) setLines((x) => [...x, { who: "you", text: q, lang }]);
+    const v = parseOpeningReply(q);
+    if (v === "later") return void callBackLater();
+    if (v === "continue" || tries.current >= 1) return carryOn(); // after one retry, just carry on
+    tries.current++; void askOpening();
+  }, [brief.opening, brief.sections, lang, say, canListen, callBackLater, carryOn]);
+
   const connect = useCallback(async () => {
     sp.unlock(); stopRingtone();
     started.current = started.current ?? Date.now();
@@ -127,8 +162,8 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
     void fetch("/api/ai/call/answer", { method: "POST" }).catch(() => null);
     await chime("connect");
     await new Promise((r) => setTimeout(r, 450));
-    void playReport(chapter);
-  }, [playReport, chapter]);
+    if (chapter > 0) void playReport(chapter); else { tries.current = 0; void askOpening(); }
+  }, [playReport, chapter, askOpening]);
 
   // Answered from the notification: try to start straight away; if the browser wants a tap first, the "tap" phase asks for it.
   useEffect(() => { if (answered) void connect(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
@@ -146,7 +181,12 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
   const speaking = phase === "report" || phase === "replying";
   const font = lang === "ml" ? ML_FONT : undefined;
 
-  return (
+  // Drawn straight into <body>: inside the app shell an ancestor's animation/transform would trap a fixed layer under the page.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); document.body.style.overflow = "hidden"; return () => { document.body.style.overflow = ""; }; }, []);
+  if (!mounted) return null;
+
+  return createPortal(
     <div className="call-screen" style={font}>
       <div className="call-bg" aria-hidden />
       <div className="relative z-10 mx-auto flex min-h-[calc(100dvh-2rem)] max-w-3xl flex-col px-4 py-6 text-white">
@@ -175,7 +215,8 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
 
         {/* caption / live words */}
         <div className="mt-6 min-h-24 rounded-3xl bg-black/20 p-5 text-center text-[17px] leading-relaxed backdrop-blur" aria-live="polite">
-          {phase === "listening" ? <span className="italic text-white/80">{partial || L(lang, "Go ahead, I'm listening…", "പറഞ്ഞോളൂ, ഞാൻ കേൾക്കുന്നു…")}</span>
+          {phase === "opening" && partial ? <span className="italic text-white/80">{partial}</span>
+            : phase === "listening" ? <span className="italic text-white/80">{partial || L(lang, "Go ahead, I'm listening…", "പറഞ്ഞോളൂ, ഞാൻ കേൾക്കുന്നു…")}</span>
             : phase === "ringing" ? <span className="text-white/80">{L(lang, "Your personal AI assistant is calling with today's summary.", "നിങ്ങളുടെ പേഴ്സണൽ AI അസിസ്റ്റന്റ് ഇന്നത്തെ സംഗ്രഹവുമായി വിളിക്കുന്നു.")}</span>
             : phase === "tap" ? <button onClick={() => void connect()} className="mx-auto inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3 font-semibold text-[#0b3558]"><Volume2 size={18} />{L(lang, "Tap to hear Elister", "കേൾക്കാൻ ടാപ്പ് ചെയ്യുക")}</button>
             : caption}
@@ -214,6 +255,21 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
             <div className="text-center"><button onClick={decline} className="call-btn bg-[#e5484d]" aria-label="Decline"><PhoneOff size={28} /></button><div className="mt-2 text-xs text-white/70">{L(lang, "Decline", "നിരസിക്കുക")}</div></div>
             <div className="text-center"><button onClick={() => void connect()} className="call-btn call-btn-answer bg-[#1fbf75]" aria-label="Answer"><Phone size={28} /></button><div className="mt-2 text-xs text-white/70">{L(lang, "Answer", "എടുക്കുക")}</div></div>
           </div>
+        ) : phase === "opening" ? (
+          <div className="mb-6 mt-8 space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <button onClick={carryOn} className="rounded-2xl bg-[#1fbf75] px-4 py-4 text-sm font-semibold text-white shadow-lg transition hover:-translate-y-0.5">{L(lang, "Yes, carry on", "തുടരൂ")}</button>
+              <button onClick={() => void callBackLater()} className="rounded-2xl bg-white/12 px-4 py-4 text-sm font-semibold transition hover:bg-white/20">{L(lang, "Call me back in 30 min", "30 മിനിറ്റ് കഴിഞ്ഞ് വിളിക്കൂ")}</button>
+            </div>
+            <p className="text-center text-xs text-white/60">{canListen ? L(lang, "Or just say \"carry on\" or \"call me later\".", "അല്ലെങ്കിൽ \"തുടരൂ\" അല്ലെങ്കിൽ \"പിന്നെ വിളിക്കൂ\" എന്ന് പറയൂ.") : ""}</p>
+            <div className="text-center"><button onClick={() => hangUp()} className="call-btn mx-auto bg-[#e5484d]" aria-label="Hang up"><PhoneOff size={26} /></button></div>
+          </div>
+        ) : phase === "snoozed" ? (
+          <div className="mb-6 mt-8 space-y-3 text-center">
+            <p className="text-lg font-semibold">{L(lang, `Elister will call you back at ${callbackAt ?? ""}`, `${callbackAt ?? ""}-ന് എലിസ്റ്റർ തിരികെ വിളിക്കും`)}</p>
+            <p className="text-sm text-white/70">{L(lang, "You'll get the same incoming call on this device.", "ഇതേ ഉപകരണത്തിൽ കോൾ വരും.")}</p>
+            <Link href="/dashboard" className="inline-flex rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-[#0b3558]">{L(lang, "Back to Elister", "എലിസ്റ്ററിലേക്ക് മടങ്ങുക")}</Link>
+          </div>
         ) : phase === "ended" ? (
           <div className="mb-6 mt-8 space-y-3 text-center">
             <p className="text-sm text-white/70">{L(lang, `Call lasted ${mmss(secs)}. Your full report is saved.`, `കോൾ ${mmss(secs)} നീണ്ടു. പൂർണ്ണ റിപ്പോർട്ട് സേവ് ചെയ്തിട്ടുണ്ട്.`)}</p>
@@ -232,7 +288,8 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

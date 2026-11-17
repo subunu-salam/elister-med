@@ -95,7 +95,7 @@ async function activeAdmins(orgId: string, except?: string) {
 }
 
 /** Roles, module access, job title and active flag for one person. modules = null means "everything the role allows". */
-export async function updateAccess(ctx: Ctx, userId: string, input: { roles: string[]; modules: string[] | null; active: boolean; title?: string }) {
+export async function updateAccess(ctx: Ctx, userId: string, input: { roles: string[]; modules: string[] | null; active: boolean; title?: string; name?: string }) {
   assertSuperAdmin(ctx);
   const col = await mems();
   const m = await col.findOne({ orgId: ctx.orgId, userId });
@@ -108,6 +108,9 @@ export async function updateAccess(ctx: Ctx, userId: string, input: { roles: str
   if (m.roles.includes("platform_super_admin") && !ctx.roles.includes("platform_super_admin")) throw new AppError("FORBIDDEN", "Only a platform super admin can change another platform super admin");
   const set = { roles, modules, active: input.active, title: input.title?.trim().slice(0, 80) || undefined, updatedAt: new Date() };
   await col.updateOne({ orgId: ctx.orgId, userId }, { $set: set });
+  // The name is what the personal assistant calls the person ("Hi Salim"), and what the app shows.
+  const name = input.name?.trim().slice(0, 80);
+  if (name && name.length >= 2 && ObjectId.isValid(userId)) await (await users()).updateOne({ _id: new ObjectId(userId) }, { $set: { name, updatedAt: new Date() } as never });
   await logAdmin(ctx, "access", userId, { before: { roles: m.roles, modules: m.modules ?? null, active: m.active }, after: set });
 }
 

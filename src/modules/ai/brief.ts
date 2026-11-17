@@ -15,7 +15,7 @@ import { pnl } from "@/modules/reports/pnl";
 import { revenueBy } from "@/modules/reports/revenueBy";
 import { askBooks, cfoInsights } from "@/modules/accounts/insights";
 import { demandForecast } from "./service";
-import { allowedSections, answerFromFacts, composeBrief, MALAYALAM, SECTION_KEYS, type Brief, type BriefFacts, type Lang, type SectionKey, type VoiceAnswer } from "./brief-core";
+import { allowedSections, answerFromFacts, callOpening, composeBrief, firstName, MALAYALAM, SECTION_KEYS, type Brief, type BriefFacts, type Lang, type SectionKey, type VoiceAnswer } from "./brief-core";
 import { askExternal, voiceProvider } from "./voice-provider";
 
 /**
@@ -27,7 +27,7 @@ import { askExternal, voiceProvider } from "./voice-provider";
 const DAY = 86400000;
 const num = (x: unknown) => fromDecimal128(x as Decimal128).toNumber();
 const clean = (n: string) => n.replace(/\s*\(.*?\)\s*/g, "").trim();
-type Snapshot = { _id: string; userId: string; ymd: string; facts: BriefFacts; at: Date; listenedAt?: Date; calledAt?: Date; answeredAt?: Date; declinedAt?: Date };
+type Snapshot = { _id: string; userId: string; ymd: string; facts: BriefFacts; at: Date; listenedAt?: Date; calledAt?: Date; answeredAt?: Date; declinedAt?: Date; snoozeUntil?: Date | null };
 const snaps = (orgId: string) => tenantCol<Snapshot>(orgId, "ai_briefs");
 
 // ---------------------------------------------------------------- who may use it, and their settings
@@ -50,7 +50,7 @@ export type AssistantPrefs = {
   /** Set by the super admin: the person cannot change these. */
   lockedBy?: string;
 };
-export const DEFAULT_PREFS: AssistantPrefs = { enabled: true, callTime: "20:00", days: [0, 1, 2, 3, 4, 5, 6], lang: "en", sections: [...SECTION_KEYS] };
+export const DEFAULT_PREFS: AssistantPrefs = { enabled: true, callTime: "18:00", days: [0, 1, 2, 3, 4, 5, 6], lang: "en", sections: [...SECTION_KEYS] };
 const prefsCol = (orgId: string) => tenantCol<AssistantPrefs & { _id: string; updatedAt: Date; updatedBy: string }>(orgId, "ai_assistant_prefs");
 
 export async function getPrefs(orgId: string, userId: string): Promise<AssistantPrefs> {
@@ -148,7 +148,25 @@ export async function gatherFacts(ctx: Ctx & { name?: string }, now = new Date()
   const nextDow = dubaiParts(nextR.from).dow;
   const tradeAr = cfo ? cfo.summary.receivables.toNumber() - patientAr : 0;
 
+  // Last 7 days ending with the reported day, against the 7 before ("how was this week?").
+  const wkFrom = new Date(report.to.getTime() - 7 * DAY), wkPrev = new Date(report.to.getTime() - 14 * DAY);
+  const [wkAppts, wkNew, wkRev, wkPrevRev] = await Promise.all([
+    clinical ? appts.find({ start: { $gte: wkPrev, $lt: report.to }, status: { $in: ["completed", "checked_in", "in_consult"] } } as never, { projection: { start: 1 }, limit: 20000 }) : none([] as Appointment[]),
+    can("patients:view") ? tenantCol(ctx.orgId, "patients").count({ createdAt: { $gte: wkFrom, $lt: report.to } } as never) : none(0),
+    finance ? pnl(ctx, { from: wkFrom, to: report.to }) : none(null),
+    finance ? pnl(ctx, { from: wkPrev, to: wkFrom }) : none(null),
+  ]);
+  const perDay = new Map<string, number>();
+  for (const a of wkAppts) if (a.start >= wkFrom) { const k = dubaiParts(a.start).ymd; perDay.set(k, (perDay.get(k) ?? 0) + 1); }
+  const top7 = [...perDay].sort((a, b) => b[1] - a[1])[0];
+  const week = {
+    visits: wkAppts.filter((a) => a.start >= wkFrom).length, prevVisits: wkAppts.filter((a) => a.start < wkFrom).length,
+    revenue: wkRev?.income.toNumber() ?? 0, prevRevenue: wkPrevRev?.income.toNumber() ?? 0, newPatients: wkNew,
+    busiest: top7 ? { ymd: top7[0], dow: new Date(`${top7[0]}T12:00:00Z`).getUTCDay(), visits: top7[1] } : undefined,
+  };
+
   return {
+    week,
     ymd: dubaiParts(report.from).ymd, dow: dubaiParts(report.from).dow, period, hour,
     recipient: ctx.name ?? "", org: org?.name ?? "the clinic",
     scope: { clinical, finance },
@@ -192,17 +210,18 @@ export async function getFacts(ctx: Ctx & { name?: string }, opts: { refresh?: b
   if (!opts.refresh) {
     const hit = await snaps(ctx.orgId).findOne({ _id } as never);
     // a morning snapshot is stale once the end-of-day report is due
-    if (hit && !(hit.facts.period === "yesterday" && dubaiHour(now) >= 15)) return { facts: hit.facts, at: hit.at };
+    // the person's current name, so a rename in the control centre is used straight away
+    if (hit && !(hit.facts.period === "yesterday" && dubaiHour(now) >= 15)) return { facts: { ...hit.facts, recipient: ctx.name || hit.facts.recipient }, at: hit.at };
   }
   const facts = await gatherFacts(ctx, now);
   await snaps(ctx.orgId).updateOne({ _id } as never, { $set: { userId: ctx.userId, ymd, facts, at: now } } as never, undefined, { upsert: true });
   return { facts, at: now };
 }
 
-export type BriefPayloadServer = Brief & { generatedAt: Date; voice: ReturnType<typeof voiceProvider>; prefs: AssistantPrefs; allowed: SectionKey[] };
+export type BriefPayloadServer = Brief & { generatedAt: Date; voice: ReturnType<typeof voiceProvider>; prefs: AssistantPrefs; allowed: SectionKey[]; opening: string; firstName: string };
 export async function getBrief(ctx: Ctx & { name?: string }, lang?: Lang, opts: { refresh?: boolean } = {}): Promise<BriefPayloadServer> {
   const [{ facts, at }, prefs] = await Promise.all([getFacts(ctx, opts), getPrefs(ctx.orgId, ctx.userId)]);
-  return { ...composeBrief(facts, lang ?? prefs.lang, { sections: prefs.sections }), generatedAt: at, voice: voiceProvider(), prefs, allowed: allowedSections(facts) };
+  return { ...composeBrief(facts, lang ?? prefs.lang, { sections: prefs.sections }), generatedAt: at, voice: voiceProvider(), prefs, allowed: allowedSections(facts), opening: callOpening(facts, lang ?? prefs.lang), firstName: firstName(facts.recipient) };
 }
 
 export async function markCall(ctx: Ctx, what: "listened" | "answered" | "declined") {
@@ -267,22 +286,36 @@ export async function placeDueCalls(now = new Date(), ring: (orgId: string, user
   const db = await getDb();
   const members = await db.collection<{ userId: string; orgId: string; active: boolean }>("memberships").find({ active: true }).toArray();
   const names = new Map((await db.collection("user").find({}, { projection: { name: 1 } }).toArray()).map((u) => [String(u._id), String((u as { name?: string }).name ?? "")]));
-  const hour = dubaiHour(now), dow = dubaiParts(now).dow, ymd = dubaiParts(now).ymd;
+  const minuteOfDay = dubaiParts(now).minutes, dow = dubaiParts(now).dow, ymd = dubaiParts(now).ymd;
+  const asMinutes = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
   let called = 0, failed = 0;
   for (const m of members) {
     try {
       const ctx = await loadCtx(m.userId);
       if (!ctx || !canBrief(ctx)) continue;
       const prefs = await getPrefs(ctx.orgId, ctx.userId);
-      // Due once the call time has passed today. Works with an hourly cron (rings within the hour) or a single daily one (rings everyone due so far).
-      if (!prefs.enabled || !prefs.days.includes(dow) || Number(prefs.callTime.slice(0, 2)) > hour) continue;
       const snap = await snaps(ctx.orgId).findOne({ _id: `${ctx.userId}:${ymd}` } as never);
-      if (snap?.calledAt) continue;
+      // A "call me back in 30 minutes" that has come due rings regardless of the daily schedule.
+      const snoozeDue = !!snap?.snoozeUntil && snap.snoozeUntil.getTime() <= now.getTime();
+      // Otherwise: once a day, as soon as the call time has passed (works with a 5-minute, hourly or daily scheduler).
+      const dailyDue = prefs.enabled && prefs.days.includes(dow) && asMinutes(prefs.callTime) <= minuteOfDay && !snap?.calledAt;
+      if (!snoozeDue && !dailyDue) continue;
       await callNow({ ...ctx, name: names.get(m.userId) ?? "" }, ring, now);
       called++;
     } catch (e) { failed++; console.error("assistant call failed", m.userId, e); }
   }
   return { called, failed };
+}
+
+/** "Call me back in 30 minutes": the scheduler rings again once this time has passed. Returns the time it will ring. */
+export async function snoozeCall(ctx: Ctx, minutes = 30): Promise<Date> {
+  assertBrief(ctx);
+  const m = Math.min(180, Math.max(5, Math.round(minutes)));
+  const until = new Date(Date.now() + m * 60_000);
+  const ymd = dubaiParts(new Date()).ymd;
+  await snaps(ctx.orgId).updateOne({ _id: `${ctx.userId}:${ymd}` } as never, { $set: { snoozeUntil: until } } as never);
+  await withTransaction((s) => audit(s, { orgId: ctx.orgId, actorId: ctx.userId, action: "ai.call_snoozed", resource: "ai", resourceId: ymd, after: { until } }));
+  return until;
 }
 
 /** Builds a fresh report and rings this person now (used by the schedule and by "Call me now"). */
@@ -291,7 +324,7 @@ export async function callNow(ctx: Ctx & { name?: string }, ring: (orgId: string
   await getFacts(ctx, { refresh: true, now });
   const p = await callPreview(ctx);
   const ymd = dubaiParts(now).ymd;
-  await snaps(ctx.orgId).updateOne({ _id: `${ctx.userId}:${ymd}` } as never, { $set: { calledAt: now } } as never);
+  await snaps(ctx.orgId).updateOne({ _id: `${ctx.userId}:${ymd}` } as never, { $set: { calledAt: now, snoozeUntil: null } } as never);
   await withTransaction((s) => notifyUser(ctx.orgId, ctx.userId, { type: "ai.brief", refType: "brief", refId: ymd, severity: "info", title: `📞 ${p.body}` }, s));
   const devices = await ring(ctx.orgId, ctx.userId);
   return { devices, preview: p };
