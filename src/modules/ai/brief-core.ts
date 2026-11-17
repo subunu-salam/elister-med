@@ -297,6 +297,8 @@ export type Intent = "revenue" | "patients" | "today" | "tomorrow" | "receivable
 
 /** English and Malayalam (script and common Manglish) cue words. Order matters: more specific intents first. */
 const CUES: [Intent, RegExp][] = [
+  // spending questions belong to the books (askBooks), not to the report's revenue figures
+  ["unknown", /\b(spen[dt]|spending|expenses?|costs?|rent|salar(y|ies)|utilit(y|ies)|suppliers?|vendors?|bills? paid|paid (to|for))\b|ചെലവ്|വാടക|ശമ്പളം/i],
   ["lang_ml", /\b(in )?malayalam\b|മലയാളത്തിൽ|മലയാളം/i],
   ["lang_en", /\b(in )?english\b|ഇംഗ്ലീഷ്/i],
   ["done", /^\s*(no|nope|nothing|no thanks?|that'?s (all|it)|i'?m good|all good|thanks?|thank you|bye|goodbye|ok(ay)?( bye)?|done)\b[\s.!]*$|^\s*(ഇല്ല|വേണ്ട|മതി|നന്ദി|ശരി)[\s.!]*$|ഒന്നും വേണ്ട|അത്ര മതി/i],
@@ -341,7 +343,7 @@ export function answerFromFacts(q: string, f: BriefFacts, asked: Lang): VoiceAns
   switch (intent) {
     case "lang_ml": return r("ശരി, ഇനി മലയാളത്തിൽ സംസാരിക്കാം. എന്താണ് അറിയേണ്ടത്?", undefined, { switchLang: "ml", followUps: suggestions("ml", f).slice(0, 3) });
     case "lang_en": return r("Sure, switching to English. What would you like to know?", undefined, { switchLang: "en", followUps: suggestions("en", f).slice(0, 3) });
-    case "done": return r(say("Alright. Your full report is saved in Elister. Have a good evening.", "ശരി. പൂർണ്ണ റിപ്പോർട്ട് എലിസ്റ്ററിൽ സേവ് ചെയ്തിട്ടുണ്ട്. ശുഭരാത്രി."), undefined, { end: true });
+    case "done": return r(say(`Alright. Your full report is saved in Elister. Have a good ${f.hour < 17 ? "day" : "evening"}.`, `ശരി. പൂർണ്ണ റിപ്പോർട്ട് എലിസ്റ്ററിൽ സേവ് ചെയ്തിട്ടുണ്ട്. ${f.hour < 17 ? "നല്ലൊരു ദിവസം ആശംസിക്കുന്നു." : "ശുഭരാത്രി."}`), undefined, { end: true });
     case "repeat": return r(brief.sections.filter((x) => !["intro", "close"].includes(x.key)).map((x) => x.text).join(" ") + more);
     case "greeting": return r(say("Hello! Ask me about revenue, patients, bookings, money to collect or cash.", "നമസ്കാരം! വരുമാനം, രോഗികൾ, ബുക്കിംഗ്, കിട്ടാനുള്ള പണം, ക്യാഷ് എന്നിവയെക്കുറിച്ച് ചോദിക്കാം."));
     case "help": return r(say("I can tell you about revenue, profit, patients, bookings for today and tomorrow, money owed to the clinic, cash, the top doctor and anything that needs attention. I can also answer questions about the books, like how much was spent on rent last month.",
