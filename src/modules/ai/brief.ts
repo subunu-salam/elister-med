@@ -17,6 +17,7 @@ import { askBooks, cfoInsights } from "@/modules/accounts/insights";
 import { demandForecast } from "./service";
 import { allowedSections, answerFromFacts, callOpening, composeBrief, firstName, MALAYALAM, SECTION_KEYS, type Brief, type BriefFacts, type Lang, type SectionKey, type VoiceAnswer } from "./brief-core";
 import { askExternal, voiceProvider } from "./voice-provider";
+import { callsOn, upcomingCalls } from "./schedule-core";
 
 /**
  * Personal AI assistant. Gathers the figures for one day from the clinic's own data with the person's own permissions (so the super
@@ -47,6 +48,8 @@ export type AssistantPrefs = {
   days: number[];
   lang: Lang;
   sections: SectionKey[];
+  /** Dubai dates (YYYY-MM-DD) with no call, chosen on the calendar. */
+  skipDates?: string[];
   /** Set by the super admin: the person cannot change these. */
   lockedBy?: string;
 };
@@ -55,7 +58,7 @@ const prefsCol = (orgId: string) => tenantCol<AssistantPrefs & { _id: string; up
 
 export async function getPrefs(orgId: string, userId: string): Promise<AssistantPrefs> {
   const p = await prefsCol(orgId).findOne({ _id: userId } as never);
-  return p ? { enabled: p.enabled, callTime: p.callTime, days: p.days ?? DEFAULT_PREFS.days, lang: p.lang, sections: p.sections?.length ? p.sections : DEFAULT_PREFS.sections, lockedBy: p.lockedBy ?? undefined } : { ...DEFAULT_PREFS };
+  return p ? { enabled: p.enabled, callTime: p.callTime, days: p.days ?? DEFAULT_PREFS.days, lang: p.lang, sections: p.sections?.length ? p.sections : DEFAULT_PREFS.sections, skipDates: p.skipDates ?? [], lockedBy: p.lockedBy ?? undefined } : { ...DEFAULT_PREFS };
 }
 
 export function cleanPrefs(input: Partial<AssistantPrefs>, base: AssistantPrefs): AssistantPrefs {
@@ -63,7 +66,9 @@ export function cleanPrefs(input: Partial<AssistantPrefs>, base: AssistantPrefs)
   const sections = Array.isArray(input.sections) ? input.sections.filter((s): s is SectionKey => (SECTION_KEYS as readonly string[]).includes(s)) : base.sections;
   const days = Array.isArray(input.days) ? [...new Set(input.days.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))].sort() : base.days;
   if (!sections.length) throw new AppError("VALIDATION", "Choose at least one part of the report");
-  return { enabled: typeof input.enabled === "boolean" ? input.enabled : base.enabled, callTime: time, days, lang: input.lang === "ml" ? "ml" : input.lang === "en" ? "en" : base.lang, sections, lockedBy: base.lockedBy };
+  const today = dubaiParts(new Date()).ymd;
+  const skipDates = Array.isArray(input.skipDates) ? [...new Set(input.skipDates.filter((d) => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= today))].sort().slice(0, 120) : (base.skipDates ?? []).filter((d) => d >= today);
+  return { skipDates, enabled: typeof input.enabled === "boolean" ? input.enabled : base.enabled, callTime: time, days, lang: input.lang === "ml" ? "ml" : input.lang === "en" ? "en" : base.lang, sections, lockedBy: base.lockedBy };
 }
 
 /** The person's own settings ("which details do I want, and when should Elister call me"). */
@@ -286,7 +291,7 @@ export async function placeDueCalls(now = new Date(), ring: (orgId: string, user
   const db = await getDb();
   const members = await db.collection<{ userId: string; orgId: string; active: boolean }>("memberships").find({ active: true }).toArray();
   const names = new Map((await db.collection("user").find({}, { projection: { name: 1 } }).toArray()).map((u) => [String(u._id), String((u as { name?: string }).name ?? "")]));
-  const minuteOfDay = dubaiParts(now).minutes, dow = dubaiParts(now).dow, ymd = dubaiParts(now).ymd;
+  const minuteOfDay = dubaiParts(now).minutes, ymd = dubaiParts(now).ymd;
   const asMinutes = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
   let called = 0, failed = 0;
   for (const m of members) {
@@ -298,7 +303,7 @@ export async function placeDueCalls(now = new Date(), ring: (orgId: string, user
       // A "call me back in 30 minutes" that has come due rings regardless of the daily schedule.
       const snoozeDue = !!snap?.snoozeUntil && snap.snoozeUntil.getTime() <= now.getTime();
       // Otherwise: once a day, as soon as the call time has passed (works with a 5-minute, hourly or daily scheduler).
-      const dailyDue = prefs.enabled && prefs.days.includes(dow) && asMinutes(prefs.callTime) <= minuteOfDay && !snap?.calledAt;
+      const dailyDue = callsOn(prefs, ymd) && asMinutes(prefs.callTime) <= minuteOfDay && !snap?.calledAt;
       if (!snoozeDue && !dailyDue) continue;
       await callNow({ ...ctx, name: names.get(m.userId) ?? "" }, ring, now);
       called++;
@@ -316,6 +321,22 @@ export async function snoozeCall(ctx: Ctx, minutes = 30): Promise<Date> {
   await snaps(ctx.orgId).updateOne({ _id: `${ctx.userId}:${ymd}` } as never, { $set: { snoozeUntil: until } } as never);
   await withTransaction((s) => audit(s, { orgId: ctx.orgId, actorId: ctx.userId, action: "ai.call_snoozed", resource: "ai", resourceId: ymd, after: { until } }));
   return until;
+}
+
+/** Everything the "Scheduled calls" screen shows: settings, a pending call-back, and the next calls. */
+export async function getSchedule(ctx: Ctx) {
+  assertBrief(ctx);
+  const now = new Date(), ymd = dubaiParts(now).ymd;
+  const [prefs, snap] = await Promise.all([getPrefs(ctx.orgId, ctx.userId), snaps(ctx.orgId).findOne({ _id: `${ctx.userId}:${ymd}` } as never)]);
+  const snoozeUntil = snap?.snoozeUntil && snap.snoozeUntil.getTime() > now.getTime() - 5 * 60_000 ? snap.snoozeUntil : null;
+  return { prefs, snoozeUntil, calledToday: snap?.calledAt ?? null, answeredToday: snap?.answeredAt ?? null, upcoming: upcomingCalls(prefs, now, { snoozeUntil, calledToday: !!snap?.calledAt, count: 6 }) };
+}
+
+/** Cancels a pending "call me back". */
+export async function cancelSnooze(ctx: Ctx) {
+  assertBrief(ctx);
+  const ymd = dubaiParts(new Date()).ymd;
+  await snaps(ctx.orgId).updateOne({ _id: `${ctx.userId}:${ymd}` } as never, { $set: { snoozeUntil: null } } as never);
 }
 
 /** Builds a fresh report and rings this person now (used by the schedule and by "Call me now"). */

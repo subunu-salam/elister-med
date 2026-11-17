@@ -2,6 +2,7 @@
   "app.name": "Elister Med",
   "nav.brief": "Personal assistant",
   "nav.admin": "Control centre",
+  "nav.callSchedule": "Scheduled calls",
   "nav.dashboard": "Dashboard",
   "nav.patients": "Patients",
   "nav.appointments": "Appointments",
