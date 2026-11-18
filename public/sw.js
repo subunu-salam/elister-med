@@ -23,8 +23,8 @@ self.addEventListener("push", (event) => {
       requireInteraction: true,
       silent: false,
       vibrate: RING,
-      icon: "/brand/app-icon.png",
-      badge: "/brand/app-icon.png",
+      icon: "/brand/icon-192.png",
+      badge: "/brand/badge-96.png",
       data: { url: "/ai/call?answer=1", ymd: info.ymd },
       actions: [
         { action: "answer", title: "📞 Answer" },

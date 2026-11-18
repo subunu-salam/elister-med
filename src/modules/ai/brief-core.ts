@@ -1,3 +1,4 @@
+import { zonedParts } from "./schedule-core";
 /**
  * Personal AI assistant ("Elister Brief"): pure composition logic, no database and no I/O, so it is unit-tested directly.
  * brief.ts gathers the figures from the clinic's own data; this file turns them into a spoken report in English or Malayalam,
@@ -175,6 +176,7 @@ export function callOpening(f: Pick<BriefFacts, "recipient" | "org" | "period" |
 /** The owner's answer to the opening question: carry on, call back later, or not clear yet. */
 export function parseOpeningReply(q: string): "continue" | "later" | "unclear" {
   const t = q.toLowerCase();
+  if (CALLBACK_RE.test(t)) return "later";
   if (/\b(later|call (me )?back|ring (me )?back|busy|not now|in (half an hour|30|thirty)|after (30|thirty|half)|snooze|remind)\b|പിന്നെ|തിരികെ വിളി|തിരിച്ചു വിളി|തിരക്ക്|പിന്നീട്/.test(t)) return "later";
   if (/\b(yes|yeah|yep|sure|ok(ay)?|go ahead|go on|carry on|continue|please do|tell me|start|fine|good|great|doing well|i'?m (good|fine|well))\b|അതെ|ശരി|തുടര|പറയൂ|പറഞ്ഞോ|സുഖം|ഓക്കെ/.test(t)) return "continue";
   return "unclear";
@@ -315,10 +317,43 @@ export function shareText(b: Brief): string {
 
 // ---------------------------------------------------------------- follow-up questions
 
-export type Intent = "week" | "revenue" | "patients" | "today" | "tomorrow" | "receivables" | "profit" | "cash" | "doctor" | "noshow" | "attention" | "month" | "repeat" | "help" | "lang_en" | "lang_ml" | "greeting" | "done" | "unknown";
+export type Intent = "callback" | "week" | "revenue" | "patients" | "today" | "tomorrow" | "receivables" | "profit" | "cash" | "doctor" | "noshow" | "attention" | "month" | "repeat" | "help" | "lang_en" | "lang_ml" | "greeting" | "done" | "unknown";
+
+const CALLBACK_RE = /\b(call|ring|phone) (me )?(back|again|later|in|at|after)\b|\bcall ?back\b|\b(remind|ring) me\b|\bcall me\b.*\b(\d{1,2}(:\d{2})?\s*(am|pm)?|minutes?|mins?|hours?|hrs?|later|tomorrow)\b|തിരികെ വിളി|തിരിച്ചു വിളി|പിന്നെ വിളി|പിന്നീട് വിളി/i;
+
+/**
+ * When to call back, in minutes from now, from things like "call me back at 12:37", "at 5 pm", "in 10 minutes", "in an hour", "later".
+ * Clock times are in the person's time zone (default Dubai); a time that has already passed today means tomorrow. Null when no call-back is asked.
+ */
+export function parseCallback(q: string, now: Date, tz = "Asia/Dubai"): number | null {
+  if (!CALLBACK_RE.test(q) && !/\b(later|busy|not now)\b|പിന്നെ|തിരക്ക്/i.test(q)) return null;
+  const t = q.toLowerCase().replace(/\./g, ":");
+  const rel = /\b(?:in|after)\s+(an?|one|half an?|\d+(?:[.,]\d+)?)\s*(hours?|hrs?|h|minutes?|mins?|m)\b/.exec(t) ?? /(\d+)\s*(മിനിറ്റ്|മണിക്കൂർ)/.exec(t);
+  if (rel) {
+    const n = /^half/.test(rel[1]) ? 0.5 : /^(an?|one)$/.test(rel[1]) ? 1 : Number(rel[1].replace(",", "."));
+    const hours = /^h|മണിക്കൂർ/.test(rel[2]);
+    return Math.max(1, Math.round(hours ? n * 60 : n));
+  }
+  if (/half an hour|half hour|അര മണിക്കൂർ/.test(t)) return 30;
+  const at = /\b(?:at|by|around)?\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/.exec(t.replace(/\b(in|after)\s+\d+\s*\w+/, ""));
+  if (at && (at[2] || at[3] || /\b(at|by|around)\s*\d/.test(t))) {
+    let h = Number(at[1]); const m = Number(at[2] ?? 0);
+    if (h > 23 || m > 59) return 30;
+    const nowMin = zonedParts(now, tz).minutes; // the person's own wall clock
+    const cands: number[] = [];
+    if (at[3]) cands.push(((h % 12) + (at[3] === "pm" ? 12 : 0)) * 60 + m);
+    else if (h >= 13) cands.push(h * 60 + m);
+    else cands.push(h * 60 + m, ((h % 12) + 12) * 60 + m); // "5:30" → the next 5:30, morning or evening
+    const diffs = cands.map((c) => (c - nowMin + 1440) % 1440 || 1440);
+    return Math.max(1, Math.min(...diffs));
+  }
+  return 30;
+}
 
 /** English and Malayalam (script and common Manglish) cue words. Order matters: more specific intents first. */
 const CUES: [Intent, RegExp][] = [
+  // "call me back at 12:37 / in 10 minutes / later" works at any point in the call
+  ["callback", CALLBACK_RE],
   // spending questions belong to the books (askBooks), not to the report's revenue figures
   ["unknown", /\b(spen[dt]|spending|expenses?|costs?|rent|salar(y|ies)|utilit(y|ies)|suppliers?|vendors?|bills? paid|paid (to|for))\b|ചെലവ്|വാടക|ശമ്പളം/i],
   ["lang_ml", /\b(in )?malayalam\b|മലയാളത്തിൽ|മലയാളം/i],
@@ -347,10 +382,11 @@ export function detectIntent(q: string): Intent {
 
 export const MALAYALAM = /[ഀ-ൿ]/;
 /** end = the owner said they are done; the call can hang up after speaking the answer. */
-export type VoiceAnswer = { intent: Intent; answer: string; switchLang?: Lang; href?: string; followUps: string[]; handled: boolean; end?: boolean };
+/** callbackMinutes: the owner asked to be called back that many minutes from now (the call then ends). */
+export type VoiceAnswer = { intent: Intent; answer: string; switchLang?: Lang; href?: string; followUps: string[]; handled: boolean; end?: boolean; callbackMinutes?: number };
 
 /** Answers a follow-up from the report's own figures. Unknown questions return handled:false so the server can try the books. */
-export function answerFromFacts(q: string, f: BriefFacts, asked: Lang): VoiceAnswer {
+export function answerFromFacts(q: string, f: BriefFacts, asked: Lang, now: Date = new Date(), tz = "Asia/Dubai"): VoiceAnswer {
   // A question asked in Malayalam script gets a Malayalam answer, whatever the current setting.
   const lang: Lang = MALAYALAM.test(q) ? "ml" : asked;
   const ml = lang === "ml";
@@ -366,6 +402,13 @@ export function answerFromFacts(q: string, f: BriefFacts, asked: Lang): VoiceAns
   switch (intent) {
     case "lang_ml": return r("ശരി, ഇനി മലയാളത്തിൽ സംസാരിക്കാം. എന്താണ് അറിയേണ്ടത്?", undefined, { switchLang: "ml", followUps: suggestions("ml", f).slice(0, 3) });
     case "lang_en": return r("Sure, switching to English. What would you like to know?", undefined, { switchLang: "en", followUps: suggestions("en", f).slice(0, 3) });
+    case "callback": {
+      const mins = parseCallback(q, now, tz) ?? 30;
+      const at = new Date(now.getTime() + mins * 60_000).toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: tz });
+      const name = firstName(f.recipient);
+      return r(say(`Sure${name ? `, ${name}` : ""}. I'll call you back at ${at}${mins < 120 ? `, in ${mins < 60 ? `${mins} minute${mins === 1 ? "" : "s"}` : `${Math.round(mins / 6) / 10} hour${mins === 60 ? "" : "s"}`}` : ""}. Talk soon!`,
+        `ശരി${name ? ` ${name}` : ""}. ${at}-ന് തിരികെ വിളിക്കാം.`), undefined, { end: true, callbackMinutes: mins });
+    }
     case "done": return r(say(`Alright. Your full report is saved in Elister. Have a good ${f.hour < 17 ? "day" : "evening"}.`, `ശരി. പൂർണ്ണ റിപ്പോർട്ട് എലിസ്റ്ററിൽ സേവ് ചെയ്തിട്ടുണ്ട്. ${f.hour < 17 ? "നല്ലൊരു ദിവസം ആശംസിക്കുന്നു." : "ശുഭരാത്രി."}`), undefined, { end: true });
     case "repeat": return r(brief.sections.filter((x) => !["intro", "close"].includes(x.key)).map((x) => x.text).join(" ") + more);
     case "greeting": return r(say("Hello! Ask me about revenue, patients, bookings, money to collect or cash.", "നമസ്കാരം! വരുമാനം, രോഗികൾ, ബുക്കിംഗ്, കിട്ടാനുള്ള പണം, ക്യാഷ് എന്നിവയെക്കുറിച്ച് ചോദിക്കാം."));

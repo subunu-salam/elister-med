@@ -48,6 +48,13 @@ export function CallListener() {
 
   useEffect(() => {
     if (!call) return;
+    // Elister is open but not on screen (another tab, minimised): also raise the system's incoming-call notification.
+    if (document.visibilityState !== "visible" && "Notification" in window && Notification.permission === "granted") {
+      void navigator.serviceWorker?.getRegistration().then((reg) => reg?.showNotification("📞 Incoming call · Elister AI", {
+        body: call.body, tag: "elister-call", requireInteraction: true, icon: "/brand/icon-192.png", badge: "/brand/badge-96.png",
+        data: { url: "/ai/call?answer=1" }, actions: [{ action: "answer", title: "📞 Answer" }, { action: "decline", title: "Decline" }],
+      } as NotificationOptions & { renotify?: boolean; vibrate?: number[] }));
+    }
     void startRingtone();
     const t = setTimeout(() => setCall(null), 45000); // stops ringing after 45 s, like a missed call
     return () => { clearTimeout(t); stopRingtone(); };

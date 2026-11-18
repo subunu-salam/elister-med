@@ -1,16 +1,12 @@
 "use client";
-import { useEffect, useState } from "react";
-import { BellRing, Check, Loader2, Lock, Phone, Smartphone } from "lucide-react";
+import { useState } from "react";
+import { BellRing, Check, Loader2, Lock, Phone } from "lucide-react";
 import { SECTION_KEYS, SECTION_LABEL, type Lang, type SectionKey } from "@/modules/ai/brief-core";
-import { registerSw, ringHere } from "./CallListener";
+import { ringHere } from "./CallListener";
+import { DeviceCalls } from "./DeviceCalls";
 
 export type Prefs = { enabled: boolean; callTime: string; days: number[]; lang: Lang; sections: SectionKey[]; lockedBy?: string };
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-function b64ToBytes(b64: string) {
-  const s = atob(b64.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (b64.length % 4)) % 4));
-  return Uint8Array.from(s, (c) => c.charCodeAt(0));
-}
 
 /**
  * "Your personal assistant" settings: turn on the call on this phone or computer, choose when Elister calls and which parts of the
@@ -20,38 +16,8 @@ export function AssistantSetup({ initial, allowed }: { initial: Prefs; allowed: 
   const [p, setP] = useState(initial);
   const [saving, setSaving] = useState<"idle" | "saving" | "saved">("idle");
   const [err, setErr] = useState<string | null>(null);
-  const [push, setPush] = useState<{ configured: boolean; publicKey: string; devices: number } | null>(null);
-  const [thisDevice, setThisDevice] = useState<"unknown" | "on" | "off" | "denied" | "unsupported">("unknown");
   const [busy, setBusy] = useState(false);
-  const [iosHint, setIosHint] = useState(false);
   const locked = !!initial.lockedBy;
-
-  useEffect(() => {
-    void fetch("/api/push").then((r) => r.json()).then(setPush).catch(() => null);
-    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
-    const standalone = window.matchMedia("(display-mode: standalone)").matches || (navigator as unknown as { standalone?: boolean }).standalone;
-    setIosHint(ios && !standalone);
-    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) { setThisDevice("unsupported"); return; }
-    if (Notification.permission === "denied") { setThisDevice("denied"); return; }
-    void navigator.serviceWorker.getRegistration().then((r) => r?.pushManager.getSubscription()).then((s) => setThisDevice(s ? "on" : "off"));
-  }, []);
-
-  const enableHere = async () => {
-    setBusy(true); setErr(null);
-    try {
-      const perm = await Notification.requestPermission();
-      if (perm !== "granted") { setThisDevice("denied"); return; }
-      const reg = await registerSw();
-      if (!reg) throw new Error("This browser cannot receive calls.");
-      if (!push?.configured) { setThisDevice("on"); setErr("Notifications are on. The administrator still needs to add the push keys before calls can reach this device while Elister is closed. Until then, calls ring whenever Elister is open."); return; }
-      await navigator.serviceWorker.ready;
-      const sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(push.publicKey) as BufferSource }));
-      const r = await fetch("/api/push", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ endpoint: sub.endpoint, ua: navigator.userAgent }) });
-      const j = await r.json();
-      setPush((x) => (x ? { ...x, devices: j.devices } : x));
-      setThisDevice("on");
-    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
-  };
 
   const callMe = async () => {
     setBusy(true); setErr(null);
@@ -90,33 +56,19 @@ export function AssistantSetup({ initial, allowed }: { initial: Prefs; allowed: 
       {err && <p className="mt-3 rounded-xl bg-warn/10 p-3 text-sm">{err}</p>}
 
       {/* this device */}
-      <div className="mt-4 rounded-2xl bg-surface-2 p-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <Smartphone size={18} className="text-primary" />
-          <div className="min-w-0 flex-1 text-sm">
-            <div className="font-medium">This device</div>
-            <div className="text-xs text-muted">
-              {thisDevice === "on" ? "Elister can ring this device." : thisDevice === "denied" ? "Notifications are blocked for Elister. Allow them in the browser's site settings, then try again." : thisDevice === "unsupported" ? "This browser can't receive calls. Use Chrome or Edge, or on iPhone add Elister to the Home Screen first." : "Turn on calls so Elister can ring you even when the app is closed."}
-              {push && push.devices > 0 && ` · ${push.devices} device${push.devices === 1 ? "" : "s"} set up`}
-            </div>
-          </div>
-          {thisDevice !== "on" && thisDevice !== "unsupported" && <button onClick={() => void enableHere()} disabled={busy || thisDevice === "denied"} className="rounded-xl border border-primary px-3 py-2 text-sm font-semibold text-primary disabled:opacity-50">Turn on calls</button>}
-          {thisDevice === "on" && <span className="inline-flex items-center gap-1 text-sm font-semibold text-ok"><Check size={15} />On</span>}
-        </div>
-        {iosHint && <p className="mt-3 text-xs text-muted">iPhone/iPad: tap <b>Share</b> → <b>Add to Home Screen</b>, open Elister from the new icon, then turn on calls. Apple only lets home-screen apps ring.</p>}
-      </div>
+      <div className="mt-4"><DeviceCalls compact /></div>
 
       {/* schedule + content */}
       <fieldset disabled={locked} className="mt-4 grid gap-4 md:grid-cols-2">
         <div className="space-y-3">
           <label className="flex items-center justify-between gap-3 text-sm"><span className="font-medium">Daily call</span>
             <input type="checkbox" checked={p.enabled} onChange={(e) => void save({ ...p, enabled: e.target.checked })} className="size-5 accent-[var(--primary)]" /></label>
-          <label className="flex items-center justify-between gap-3 text-sm"><span>Time (Dubai)</span>
+          <label className="flex items-center justify-between gap-3 text-sm"><span>Time</span>
             <input type="time" value={p.callTime} step={300} onChange={(e) => void save({ ...p, callTime: e.target.value })} className="rounded-xl border border-border bg-surface-2 px-3 py-1.5" /></label>
           <div className="text-sm"><div className="mb-1.5">Days</div><div className="flex gap-1">{DAYS.map((d, i) => <button type="button" key={d} onClick={() => toggleDay(i)} className={`flex-1 rounded-lg py-1.5 text-xs font-semibold ${p.days.includes(i) ? "bg-primary text-primary-fg" : "bg-surface-2 text-muted"}`}>{d}</button>)}</div></div>
           <label className="flex items-center justify-between gap-3 text-sm"><span>Language</span>
             <select value={p.lang} onChange={(e) => void save({ ...p, lang: e.target.value as Lang })} className="rounded-xl border border-border bg-surface-2 px-3 py-1.5"><option value="en">English</option><option value="ml">മലയാളം (Malayalam)</option></select></label>
-          <p className="text-xs text-muted">Calls after 3 pm report on that day; earlier calls report on the day before. <a href="/ai/schedule" className="font-medium text-primary">Open scheduled calls →</a></p>
+          <p className="text-xs text-muted">Calls after 3 pm (Dubai) report on that day; earlier calls report on the day before. <a href="/ai/schedule" className="font-medium text-primary">Open scheduled calls →</a></p>
         </div>
         <div>
           <div className="mb-1.5 text-sm font-medium">What should the report cover?</div>

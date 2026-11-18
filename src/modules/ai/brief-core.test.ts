@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { allowedSections, answerFromFacts, callOpening, parseOpeningReply, attention, composeBrief, detectIntent, money, shareText, type BriefFacts } from "./brief-core";
+import { allowedSections, answerFromFacts, callOpening, parseCallback, parseOpeningReply, attention, composeBrief, detectIntent, money, shareText, type BriefFacts } from "./brief-core";
 
 const facts = (o: Partial<BriefFacts> = {}): BriefFacts => ({
   ymd: "2026-11-16", dow: 1, period: "today", hour: 20, recipient: "Dr. Salam Khan (Owner)", org: "Elister Med",
@@ -122,5 +122,30 @@ describe("the call opening", () => {
     const a = answerFromFacts("how was this week?", facts({ week: { visits: 96, prevVisits: 80, revenue: 52000, prevRevenue: 47000, newPatients: 14, busiest: { ymd: "2026-11-16", dow: 1, visits: 21 } } }), "en");
     expect(a.answer).toContain("96 patients");
     expect(a.answer).toContain("Monday");
+  });
+});
+
+describe("call me back", () => {
+  const now = new Date("2026-11-18T12:36:00+04:00"); // 12:36 Dubai
+  it("understands times and durations (Dubai time)", () => {
+    expect(parseCallback("I said just give me a call back at 12:37", now)).toBe(1);
+    expect(parseCallback("call me back at 5 pm", now)).toBe(4 * 60 + 24);
+    expect(parseCallback("call me at 5", now)).toBe(4 * 60 + 24);
+    expect(parseCallback("call me back in 10 minutes", now)).toBe(10);
+    expect(parseCallback("ring me in an hour", now)).toBe(60);
+    expect(parseCallback("call me back in half an hour", now)).toBe(30);
+    expect(parseCallback("call me back later", now)).toBe(30);
+    expect(parseCallback("call me back at 9", now)).toBe(8 * 60 + 24); // next 9 o'clock is 9 pm
+    expect(parseCallback("who owes us the most?", now)).toBe(null);
+  });
+  it("books the call-back from anywhere in the conversation and ends the call", () => {
+    const a = answerFromFacts("give me a call back at 12:37", facts({ recipient: "Salim" }), "en", now);
+    expect(a.intent).toBe("callback");
+    expect(a.callbackMinutes).toBe(1);
+    expect(a.end).toBe(true);
+    expect(a.answer).toContain("Sure, Salim. I'll call you back at 12:37 pm");
+  });
+  it("treats a time at the opening question as call me later", () => {
+    expect(parseOpeningReply("call me at 5 pm")).toBe("later");
   });
 });
