@@ -1,15 +1,23 @@
 {
+  "id": "/dashboard",
   "name": "Elister Med",
   "short_name": "Elister",
-  "description": "Clinic management with your personal AI assistant.",
-  "start_url": "/dashboard",
+  "description": "Clinic management with your personal AI assistant, who calls you every day with the summary.",
+  "start_url": "/dashboard?source=app",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
   "background_color": "#0b3558",
   "theme_color": "#0b3558",
+  "categories": ["business", "medical", "productivity"],
   "icons": [
-    { "src": "/brand/app-icon.png", "sizes": "256x256", "type": "image/png", "purpose": "any" },
-    { "src": "/brand/app-icon.png", "sizes": "256x256", "type": "image/png", "purpose": "maskable" }
+    { "src": "/brand/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/brand/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/brand/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
-  "shortcuts": [{ "name": "Today's report", "url": "/ai/call", "icons": [{ "src": "/brand/app-icon.png", "sizes": "256x256" }] }]
+  "shortcuts": [
+    { "name": "Talk to Elister", "url": "/ai/call", "icons": [{ "src": "/brand/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Scheduled calls", "url": "/ai/schedule", "icons": [{ "src": "/brand/icon-192.png", "sizes": "192x192" }] }
+  ]
 }

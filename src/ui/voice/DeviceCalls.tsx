@@ -13,6 +13,9 @@ const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.
 const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || (navigator as unknown as { standalone?: boolean }).standalone === true;
 
 /** Subscribes this browser/phone to the assistant's calls. Returns the new status. */
+export const isBrave = () => !!(navigator as unknown as { brave?: unknown }).brave;
+export const BRAVE_HINT = "Brave blocks call notifications by default. Open brave://settings/privacy, turn on \"Use Google services for push messaging\", restart Brave, then tap Turn on calls again.";
+
 export async function enableCallsHere(): Promise<{ status: Status; error?: string }> {
   if (isIos() && !isStandalone()) return { status: "ios-install" };
   if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return { status: "unsupported" };
@@ -29,7 +32,8 @@ export async function enableCallsHere(): Promise<{ status: Status; error?: strin
     const cur = new Uint8Array(sub.options.applicationServerKey as ArrayBuffer), want = b64ToBytes(cfg.publicKey);
     if (cur.length !== want.length || cur.some((v, i) => v !== want[i])) { await sub.unsubscribe(); sub = null; }
   }
-  sub ??= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(cfg.publicKey) as BufferSource });
+  try { sub ??= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(cfg.publicKey) as BufferSource }); }
+  catch (e) { return { status: "off", error: isBrave() ? BRAVE_HINT : `This browser refused push notifications (${(e as Error).message}). Try Chrome or Edge.` }; }
   const r = await fetch("/api/push", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ endpoint: sub.endpoint, ua: navigator.userAgent }) });
   if (!r.ok) return { status: "off", error: "Couldn't register this device. Try again." };
   return { status: "on" };
@@ -39,6 +43,7 @@ export async function enableCallsHere(): Promise<{ status: Status; error?: strin
  * "Calls on this phone": the one switch a person needs so Elister can ring them even when the app is closed, plus a test call.
  * Handles the iPhone rule (only home-screen apps get notifications) and blocked notifications.
  */
+export { type Status as CallsStatus };
 export function DeviceCalls({ compact = false }: { compact?: boolean }) {
   const [st, setSt] = useState<Status>("checking");
   const [busy, setBusy] = useState<"" | "on" | "test">("");
@@ -74,7 +79,7 @@ export function DeviceCalls({ compact = false }: { compact?: boolean }) {
   const text: Record<Status, string> = {
     checking: "Checking this device…",
     on: "Elister can ring this device, even when the app is closed.",
-    off: "Turn on calls so Elister can ring you at your scheduled time, even when the app is closed.",
+    off: `Turn on calls so Elister can ring you at your scheduled time, even when the app is closed.${typeof navigator !== "undefined" && isBrave() ? " (Brave: first turn on \"Use Google services for push messaging\" in brave://settings/privacy.)" : ""}`,
     denied: "Notifications are blocked for Elister. Open the browser's site settings (the icon left of the address), allow Notifications, then reload.",
     unsupported: "This browser can't receive calls. On Android use Chrome; on iPhone add Elister to the Home Screen first.",
     "ios-install": "On iPhone, calls only reach apps on the Home Screen: tap Share, then Add to Home Screen, open Elister from the new icon, and turn on calls there.",
