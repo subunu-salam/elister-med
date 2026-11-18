@@ -14,4 +14,6 @@ export function applyDemoDefaults(): void {
   process.env.FIELD_ENCRYPTION_KEY ||= derive("field-encryption", 32).toString("base64");
   process.env.DISPLAY_KEY ||= derive("display-key", 16).toString("hex");
   process.env.KIOSK_KEY ||= derive("kiosk-key", 16).toString("hex");
+  // On Render the service knows its own address; use it when BETTER_AUTH_URL was not set by hand.
+  if (process.env.RENDER_EXTERNAL_URL) process.env.BETTER_AUTH_URL ||= process.env.RENDER_EXTERNAL_URL.replace(/\/$/, "");
 }

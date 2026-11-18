@@ -11,11 +11,13 @@ import { setCtxResolver, type Ctx } from "../rbac/authorize";
 import { applyDemoDefaults } from "../demo-env";
 
 /**
- * Sites allowed to sign in: TRUSTED_ORIGINS, plus the deployment's own Vercel addresses (set by Vercel itself, never by a visitor),
+ * Sites allowed to sign in: TRUSTED_ORIGINS, plus the deployment's own Vercel or Render addresses (set by Vercel itself, never by a visitor),
  * so preview links for branches and pull requests can sign in without editing settings for each one.
  */
 function trustedOrigins(): string[] {
   const own = [process.env.VERCEL_URL, process.env.VERCEL_BRANCH_URL, process.env.VERCEL_PROJECT_PRODUCTION_URL].filter(Boolean).map((h) => `https://${h}`);
+  // Render sets RENDER_EXTERNAL_URL to the service's own https address
+  if (process.env.RENDER_EXTERNAL_URL) own.push(process.env.RENDER_EXTERNAL_URL.replace(/\/$/, ""));
   return [...(process.env.TRUSTED_ORIGINS ?? "").split(",").map((x) => x.trim()).filter(Boolean), ...own];
 }
 

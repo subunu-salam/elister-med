@@ -1,0 +1,30 @@
+# Render Blueprint for Elister Med (demo). Dashboard → New → Blueprint → pick this repo, then fill in MONGODB_URI.
+services:
+  - type: web
+    name: elister-med
+    runtime: node
+    region: singapore
+    plan: free
+    branch: main
+    buildCommand: npm ci && bash scripts/vercel-build.sh
+    startCommand: npx next start -p $PORT
+    healthCheckPath: /login
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: ELISTER_DEMO
+        value: "1"
+      - key: MONGODB_DB
+        value: elister_demo
+      - key: MONGODB_URI
+        sync: false
+      - key: SEED_ROLLING_BUDGET_MIN
+        value: "6"
+      - key: CRON_SECRET
+        generateValue: true
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        value: mailto:admin@devxpert.ae
