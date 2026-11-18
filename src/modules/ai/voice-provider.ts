@@ -17,12 +17,16 @@ import type { BriefFacts, Lang } from "./brief-core";
  * Optional: GEMINI_TTS_MODEL (default gemini-2.5-flash-preview-tts), GEMINI_TEXT_MODEL (default gemini-2.5-flash),
  * GEMINI_VOICE (default "Kore"; GEMINI_VOICE_ML picks a different one for Malayalam).
  */
-const KEY = () => process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "";
+export const geminiKey = () => process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "";
+const KEY = geminiKey;
 const API = "https://generativelanguage.googleapis.com/v1beta/models";
+
+/** Live two-way voice (Gemini Live): on whenever a Gemini key is set, unless ELISTER_LIVE=0. */
+export const liveEnabled = () => !!KEY() && process.env.ELISTER_LIVE !== "0";
 
 export function voiceProvider() {
   const on = !!KEY() && process.env.ELISTER_VOICE_EXTERNAL === "1";
-  return { natural: on, name: on ? ("gemini" as const) : ("browser" as const) };
+  return { natural: on, name: on ? ("gemini" as const) : ("browser" as const), live: liveEnabled() };
 }
 
 const cache = new Map<string, Uint8Array>();

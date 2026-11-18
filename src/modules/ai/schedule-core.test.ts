@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { callsOn, join24, split24, upcomingCalls } from "./schedule-core";
+import { callsOn, dailyDue, join24, split24, upcomingCalls, zonedAt, zonedParts } from "./schedule-core";
 
 const s = { enabled: true, callTime: "18:00", days: [1, 2, 3, 4, 5, 6], skipDates: ["2026-11-19"] };
 
@@ -25,5 +25,26 @@ describe("call schedule", () => {
     expect(join24(6, 30, true)).toBe("18:30");
     expect(join24(12, 0, false)).toBe("00:00");
     expect(join24(12, 15, true)).toBe("12:15");
+  });
+});
+
+describe("time zones", () => {
+  it("puts the call at the chosen time in the person's own zone", () => {
+    expect(zonedAt("2026-11-18", "18:00", "Asia/Kolkata").toISOString()).toBe("2026-11-18T12:30:00.000Z");
+    expect(zonedAt("2026-11-18", "18:00", "Asia/Dubai").toISOString()).toBe("2026-11-18T14:00:00.000Z");
+    expect(zonedParts(new Date("2026-11-18T19:00:00Z"), "Asia/Kolkata")).toEqual({ ymd: "2026-11-19", minutes: 30, dow: 4 });
+  });
+  it("lists India-time calls correctly across midnight Dubai/India", () => {
+    const next = upcomingCalls({ ...s, tz: "Asia/Kolkata" }, new Date("2026-11-18T12:00:00Z"), { count: 1 }); // 17:30 IST
+    expect(next[0].ymd).toBe("2026-11-18");
+    expect(next[0].at.toISOString()).toBe("2026-11-18T12:30:00.000Z");
+  });
+  it("a test call during the day does not cancel the evening call", () => {
+    const now = new Date("2026-11-18T10:00:00+04:00");
+    const next = upcomingCalls(s, now, { dailyCalledToday: false, count: 1 });
+    expect(next[0].ymd).toBe("2026-11-18");
+    expect(dailyDue(s, new Date("2026-11-18T18:02:00+04:00"), false)).toBe(true);
+    expect(dailyDue(s, new Date("2026-11-18T18:02:00+04:00"), true)).toBe(false);
+    expect(dailyDue(s, new Date("2026-11-18T17:59:00+04:00"), false)).toBe(false);
   });
 });
