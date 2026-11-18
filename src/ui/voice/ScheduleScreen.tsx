@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { BellRing, CalendarDays, Check, ChevronLeft, ChevronRight, Clock, Loader2, Lock, Phone, PhoneForwarded, X } from "lucide-react";
-import { addDaysYmd, callsOn, dubaiYmd, join24, split24, upcomingCalls, ymdDow, type CallSchedule } from "@/modules/ai/schedule-core";
+import { addDaysYmd, callsOn, DEFAULT_TZ, join24, split24, TZ_CHOICES, upcomingCalls, ymdDow, zonedYmd, type CallSchedule } from "@/modules/ai/schedule-core";
 import { ringHere } from "./CallListener";
 
 type Prefs = CallSchedule & { lang: "en" | "ml"; sections: string[]; lockedBy?: string };
@@ -11,7 +11,7 @@ export type ScheduleData = { prefs: Prefs; snoozeUntil: string | null; calledTod
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-const fmtTime = (d: Date) => d.toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Dubai" });
+const fmtTime = (d: Date, tz: string) => d.toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: tz });
 const fmtDay = (ymd: string, today: string) => ymd === today ? "Today" : ymd === addDaysYmd(today, 1) ? "Tomorrow" : new Date(`${ymd}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
 const localTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return "Asia/Dubai"; } };
 
@@ -31,11 +31,15 @@ export function ScheduleScreen({ initial, highlight }: { initial: ScheduleData; 
   const [saving, setSaving] = useState<"idle" | "saving" | "saved">("idle");
   const [err, setErr] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const [month, setMonth] = useState(() => dubaiYmd(new Date()).slice(0, 7));
+  const zone = initial.prefs.tz ?? DEFAULT_TZ;
+  const [month, setMonth] = useState(() => zonedYmd(new Date(), zone).slice(0, 7));
   const [busy, setBusy] = useState(false);
   const locked = !!p.lockedBy;
-  const today = dubaiYmd(new Date(now));
-  const tz = useMemo(localTz, []);
+  const tz = p.tz ?? DEFAULT_TZ;                       // the schedule's zone: all times on this screen are in it
+  const today = zonedYmd(new Date(now), tz);
+  const device = useMemo(localTz, []);
+  const tzLabel = (z: string) => TZ_CHOICES.find((c) => c.tz === z)?.label.split(" (")[0] ?? z.split("/").pop()!.replace(/_/g, " ");
+  const T = (d: Date) => fmtTime(d, tz);
   const t = split24(p.callTime);
 
   useEffect(() => { const i = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(i); }, []);
@@ -95,8 +99,8 @@ export function ScheduleScreen({ initial, highlight }: { initial: ScheduleData; 
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">{first?.kind === "callback" ? "Call-back booked" : "Next call from Elister"}</p>
             {first ? (
               <>
-                <h1 className="mt-1 text-3xl font-semibold md:text-4xl">{fmtDay(first.ymd, today)}, {fmtTime(first.at)}</h1>
-                <p className="mt-1 text-sm text-white/80">{countdown(first.at.getTime() - now)} · Dubai time{tz !== "Asia/Dubai" ? ` (${first.at.toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: tz })} your time)` : ""}</p>
+                <h1 className="mt-1 text-3xl font-semibold md:text-4xl">{fmtDay(first.ymd, today)}, {T(first.at)}</h1>
+                <p className="mt-1 text-sm text-white/80">{countdown(first.at.getTime() - now)} · {tzLabel(tz)} time{tz !== DEFAULT_TZ ? ` · ${fmtTime(first.at, DEFAULT_TZ)} in Dubai` : ""}</p>
               </>
             ) : <h1 className="mt-1 text-2xl font-semibold">No calls scheduled</h1>}
           </div>
@@ -105,7 +109,7 @@ export function ScheduleScreen({ initial, highlight }: { initial: ScheduleData; 
             <button onClick={() => void callNow()} disabled={busy} className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#0b3558] shadow-lg">{busy ? <Loader2 size={15} className="animate-spin" /> : <BellRing size={15} />}Call me now</button>
           </div>
         </div>
-        {highlight === "callback" && first?.kind === "callback" && <p className="relative mt-4 rounded-2xl bg-white/10 p-3 text-sm">You asked Elister to call back. It will ring this device at {fmtTime(first.at)}. You can change your regular call below.</p>}
+        {highlight === "callback" && first?.kind === "callback" && <p className="relative mt-4 rounded-2xl bg-white/10 p-3 text-sm">You asked Elister to call back. It will ring this device at {T(first.at)}. You can change your regular call below.</p>}
       </section>
 
       {err && <p className="rounded-2xl bg-warn/10 p-3 text-sm">{err}</p>}
@@ -119,7 +123,13 @@ export function ScheduleScreen({ initial, highlight }: { initial: ScheduleData; 
           </div>
 
           <div>
-            <div className="mb-2 text-sm font-medium">Time <span className="font-normal text-muted">(Dubai)</span></div>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm font-medium">
+              <span>Time <span className="font-normal text-muted">({tzLabel(tz)})</span></span>
+              <select aria-label="Time zone" value={tz} disabled={locked} onChange={(e) => void save({ tz: e.target.value })} className="rounded-lg border border-border bg-surface-2 px-2 py-1 text-xs font-normal">
+                {[...TZ_CHOICES, ...(TZ_CHOICES.some((c) => c.tz === device) ? [] : [{ tz: device, label: `${device} (this device)` }]), ...(TZ_CHOICES.some((c) => c.tz === tz) || tz === device ? [] : [{ tz, label: tz }])].map((c) => <option key={c.tz} value={c.tz}>{c.label}{c.tz === device ? " · this device" : ""}</option>)}
+              </select>
+            </div>
+            {tz !== device && <button disabled={locked} onClick={() => void save({ tz: device })} className="mb-2 w-full rounded-xl bg-primary/10 px-3 py-2 text-left text-xs text-primary">Your device is set to {tzLabel(device)}. Tap to use {tzLabel(device)} time for your calls.</button>}
             <div className="flex flex-wrap items-center gap-2">
               <select aria-label="Hour" value={t.h12} disabled={locked} onChange={(e) => void save({ callTime: join24(Number(e.target.value), t.m, t.pm) })} className={sel}>
                 {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => <option key={h} value={h}>{h}</option>)}
@@ -135,7 +145,7 @@ export function ScheduleScreen({ initial, highlight }: { initial: ScheduleData; 
             <div className="mt-2 flex flex-wrap gap-1.5">
               {["07:30", "09:00", "13:00", "18:00", "20:00", "21:30"].map((q) => <button key={q} disabled={locked} onClick={() => void save({ callTime: q })} className={`rounded-full border px-3 py-1 text-xs ${p.callTime === q ? "border-primary bg-primary/10 text-primary" : "border-border text-muted hover:text-fg"}`}>{(() => { const x = split24(q); return `${x.h12}:${String(x.m).padStart(2, "0")} ${x.pm ? "PM" : "AM"}`; })()}</button>)}
             </div>
-            <p className="mt-2 text-xs text-muted">After 3 pm the call reports on that day; earlier, on the day before.</p>
+            <p className="mt-2 text-xs text-muted">After 3 pm (Dubai) the call reports on that day; earlier, on the day before. Test calls with &quot;Call me now&quot; never cancel the scheduled call.</p>
           </div>
 
           <div>
@@ -193,7 +203,7 @@ export function ScheduleScreen({ initial, highlight }: { initial: ScheduleData; 
                 <li key={i} className="flex items-center gap-3 p-3 text-sm">
                   {c.kind === "callback" ? <PhoneForwarded size={16} className="text-amber-500" /> : <Phone size={16} className="text-primary" />}
                   <span className="flex-1">{fmtDay(c.ymd, today)}<span className="text-muted"> · {c.kind === "callback" ? "Call-back" : "Daily report"}</span></span>
-                  <span className="font-semibold tabular-nums">{fmtTime(c.at)}</span>
+                  <span className="font-semibold tabular-nums">{T(c.at)}</span>
                   {c.kind === "daily" && !locked && <button onClick={() => toggleDate(c.ymd)} className="text-xs text-muted hover:text-danger">Skip</button>}
                 </li>
               ))}
@@ -202,7 +212,7 @@ export function ScheduleScreen({ initial, highlight }: { initial: ScheduleData; 
         </section>
       </div>
 
-      {data.calledToday && <p className="text-center text-xs text-muted">Today&apos;s call was placed at {fmtTime(new Date(data.calledToday))}{data.answeredToday ? ` and answered at ${fmtTime(new Date(data.answeredToday))}` : ""}.</p>}
+      {data.calledToday && <p className="text-center text-xs text-muted">Today&apos;s scheduled call rang at {T(new Date(data.calledToday))}{data.answeredToday ? ` and was answered at ${T(new Date(data.answeredToday))}` : ""}.</p>}
     </div>
   );
 }

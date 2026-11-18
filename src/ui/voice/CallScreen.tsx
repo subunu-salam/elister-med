@@ -8,9 +8,10 @@ import type { Brief, Lang, VoiceAnswer } from "@/modules/ai/brief-core";
 import * as sp from "./speech";
 import { parseCallback, parseOpeningReply } from "@/modules/ai/brief-core";
 import { chime, startRingtone, stopRingtone } from "./ringtone";
+import { LiveCall, type LiveState } from "./live";
 
-export type CallBrief = Brief & { voice: { natural: boolean }; opening?: string; firstName?: string };
-type Phase = "ringing" | "opening" | "report" | "paused" | "listening" | "thinking" | "replying" | "tap" | "ended" | "snoozed";
+export type CallBrief = Brief & { voice: { natural: boolean; live?: boolean }; opening?: string; firstName?: string; prefs?: { tz?: string } };
+type Phase = "ringing" | "live" | "opening" | "report" | "paused" | "listening" | "thinking" | "replying" | "tap" | "ended" | "snoozed";
 export const CALLBACK_KEY = "elister:callback";
 type Line = { who: "elister" | "you"; text: string; lang: Lang; href?: string };
 
@@ -60,8 +61,12 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
     return r !== "cancelled" && live.current;
   }, [brief.voice.natural]);
 
+  const liveRef = useRef<LiveCall | null>(null);
+  const [liveState, setLiveState] = useState<LiveState>("idle");
+  const [muted, setMuted] = useState(false);
   const hangUp = useCallback((why: "user" | "done" = "user") => {
     live.current = false; sp.stop(); sp.stopListening(); stopRingtone();
+    liveRef.current?.close(); liveRef.current = null;
     void chime("end");
     setPhase("ended"); setCaption(why === "done" ? "" : L(lang, "Call ended.", "കോൾ അവസാനിച്ചു."));
   }, [lang]);
@@ -134,7 +139,7 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
     let until = new Date(Date.now() + minutes * 60_000);
     try { const r = await fetch("/api/ai/call/snooze", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ minutes }) }); if (r.ok) until = new Date((await r.json()).until); } catch { /* the in-app reminder below still works */ }
     try { localStorage.setItem(CALLBACK_KEY, String(until.getTime())); window.dispatchEvent(new Event("elister:callback-set")); } catch { /* private mode */ }
-    const t = until.toLocaleTimeString(lang === "ml" ? "ml-IN" : "en-GB", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Dubai" });
+    const t = until.toLocaleTimeString(lang === "ml" ? "ml-IN" : "en-GB", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: brief.prefs?.tz ?? "Asia/Dubai" });
     setCallbackAt(t);
     if (!spoken) { setPhase("replying"); await say(L(lang, `No problem${brief.firstName ? `, ${brief.firstName}` : ""}. I'll call you back at ${t}. Talk soon!`, `ശരി${brief.firstName ? ` ${brief.firstName}` : ""}. ${t}-ന് തിരികെ വിളിക്കാം.`), lang); }
     live.current = false; void chime("end"); setPhase("snoozed");
@@ -152,10 +157,64 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
     if (!live.current) return;
     if (q) setLines((x) => [...x, { who: "you", text: q, lang }]);
     const v = parseOpeningReply(q);
-    if (v === "later") return void callBackLater(parseCallback(q, new Date()) ?? 30);
+    if (v === "later") return void callBackLater(parseCallback(q, new Date(), brief.prefs?.tz) ?? 30);
     if (v === "continue" || tries.current >= 1) return carryOn(); // after one retry, just carry on
     tries.current++; void askOpening();
   }, [brief.opening, brief.sections, lang, say, canListen, callBackLater, carryOn]);
+
+  // ------------------------------------------------ live two-way voice (Gemini Live, as in VoiceBite / Local Link)
+  const curYou = useRef<number | null>(null), curEl = useRef<number | null>(null);
+  const append = (who: "you" | "elister", t: string) => setLines((x) => {
+    const ref = who === "you" ? curYou : curEl, other = who === "you" ? curEl : curYou;
+    other.current = null;
+    if (ref.current !== null && x[ref.current]) { const y = [...x]; y[ref.current] = { ...y[ref.current], text: y[ref.current].text + t }; return y; }
+    ref.current = x.length; return [...x, { who, text: t.trimStart(), lang: /[\u0D00-\u0D7F]/.test(t) ? "ml" : lang }];
+  });
+  const tz = brief.prefs?.tz ?? "Asia/Dubai";
+  const finishLive = useCallback(async (snoozed: boolean) => {
+    const lc = liveRef.current;
+    for (let i = 0; i < 60 && lc && lc.speakingFor > 0.05; i++) await new Promise((r) => setTimeout(r, 250)); // let the goodbye finish
+    lc?.close(); liveRef.current = null; live.current = false; void chime("end");
+    if (snoozed) { setPhase("snoozed"); setTimeout(() => router.push("/ai/schedule?from=callback"), 2500); } else setPhase("ended");
+  }, [router]);
+  const snoozedRef = useRef(false);
+
+  const startLive = useCallback(async (): Promise<boolean> => {
+    const lc = new LiveCall({
+      state: (st) => setLiveState(st),
+      heard: (t) => append("you", t),
+      said: (t) => { append("elister", t); setCaption((c) => (curEl.current === null ? t : c + t)); },
+      turnDone: () => { curYou.current = null; curEl.current = null; setCaption(""); },
+      closed: () => { if (live.current) void finishLive(snoozedRef.current); },
+      tool: async (name, args) => {
+        if (name === "schedule_callback") {
+          const mins = typeof args.minutes_from_now === "number" && args.minutes_from_now > 0 ? args.minutes_from_now
+            : typeof args.clock_time === "string" ? parseCallback(`call me back at ${args.clock_time}`, new Date(), tz) ?? 30 : 30;
+          const r = await fetch("/api/ai/call/snooze", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ minutes: mins }) });
+          const until = r.ok ? new Date((await r.json()).until) : new Date(Date.now() + mins * 60_000);
+          try { localStorage.setItem(CALLBACK_KEY, String(until.getTime())); window.dispatchEvent(new Event("elister:callback-set")); } catch { /* private mode */ }
+          const at = until.toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: tz });
+          setCallbackAt(at); snoozedRef.current = true;
+          return { ok: true, callback_at_local_time: at, minutes_from_now: Math.round(mins) };
+        }
+        if (name === "ask_books") {
+          const r = await fetch("/api/ai/brief/ask", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ q: String(args.question ?? ""), lang: "en" }) });
+          const j = await r.json(); return { answer: j.answer ?? "No answer found in the books." };
+        }
+        if (name === "end_call") { setTimeout(() => void finishLive(snoozedRef.current), 300); return { ok: true }; }
+        return { error: "unknown tool" };
+      },
+    });
+    liveRef.current = lc;
+    let ok = false;
+    try { ok = await lc.connect(lang); } catch { ok = false; }
+    if (!ok) { liveRef.current = null; return false; }
+    try { await lc.startMic(); } catch { lc.close(); liveRef.current = null; return false; }
+    setPhase("live");
+    lc.text("CALL_CONNECTED");
+    return true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lang, tz, finishLive]);
 
   const connect = useCallback(async () => {
     sp.unlock(); stopRingtone();
@@ -163,9 +222,10 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
     live.current = true;
     void fetch("/api/ai/call/answer", { method: "POST" }).catch(() => null);
     await chime("connect");
+    if (brief.voice.live && chapter === 0) { setCaption(L(lang, "Connecting…", "കണക്റ്റ് ചെയ്യുന്നു…")); if (await startLive()) return; setCaption(""); }
     await new Promise((r) => setTimeout(r, 450));
     if (chapter > 0) void playReport(chapter); else { tries.current = 0; void askOpening(); }
-  }, [playReport, chapter, askOpening]);
+  }, [playReport, chapter, askOpening, brief.voice.live, startLive, lang]);
 
   // Answered from the notification: try to start straight away; if the browser wants a tap first, the "tap" phase asks for it.
   useEffect(() => { if (answered) void connect(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
@@ -180,7 +240,7 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
   };
   const micToggle = () => { if (phase === "listening") { sp.stopListening(); setTyping(true); } else { sp.stop(); void listenLoop(lang); } };
 
-  const speaking = phase === "report" || phase === "replying";
+  const speaking = phase === "report" || phase === "replying" || (phase === "live" && liveState === "speaking");
   const font = lang === "ml" ? ML_FONT : undefined;
 
   // Drawn straight into <body>: inside the app shell an ancestor's animation/transform would trap a fixed layer under the page.
@@ -202,7 +262,7 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
 
         {/* caller */}
         <div className="mt-8 flex flex-col items-center text-center">
-          <div className={`call-avatar ${phase === "ringing" ? "is-ringing" : speaking ? "is-speaking" : phase === "listening" ? "is-listening" : phase === "thinking" ? "is-thinking" : ""}`}>
+          <div className={`call-avatar ${phase === "ringing" ? "is-ringing" : speaking ? "is-speaking" : phase === "listening" || (phase === "live" && liveState === "listening") ? "is-listening" : phase === "thinking" ? "is-thinking" : ""}`}>
             <span className="call-avatar-core">E</span><span className="call-wave" /><span className="call-wave w2" /><span className="call-wave w3" />
           </div>
           <h1 className="mt-6 text-2xl font-semibold">Elister AI</h1>
@@ -217,7 +277,8 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
 
         {/* caption / live words */}
         <div className="mt-6 min-h-24 rounded-3xl bg-black/20 p-5 text-center text-[17px] leading-relaxed backdrop-blur" aria-live="polite">
-          {phase === "opening" && partial ? <span className="italic text-white/80">{partial}</span>
+          {phase === "live" ? (caption || <span className="italic text-white/70">{muted ? L(lang, "You're on mute", "മ്യൂട്ട് ആണ്") : liveState === "connecting" ? L(lang, "Connecting…", "കണക്റ്റ് ചെയ്യുന്നു…") : L(lang, "Listening… just talk", "കേൾക്കുന്നു… സംസാരിച്ചോളൂ")}</span>)
+            : phase === "opening" && partial ? <span className="italic text-white/80">{partial}</span>
             : phase === "listening" ? <span className="italic text-white/80">{partial || L(lang, "Go ahead, I'm listening…", "പറഞ്ഞോളൂ, ഞാൻ കേൾക്കുന്നു…")}</span>
             : phase === "ringing" ? <span className="text-white/80">{L(lang, "Your personal AI assistant is calling with today's summary.", "നിങ്ങളുടെ പേഴ്സണൽ AI അസിസ്റ്റന്റ് ഇന്നത്തെ സംഗ്രഹവുമായി വിളിക്കുന്നു.")}</span>
             : phase === "tap" ? <button onClick={() => void connect()} className="mx-auto inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3 font-semibold text-[#0b3558]"><Volume2 size={18} />{L(lang, "Tap to hear Elister", "കേൾക്കാൻ ടാപ്പ് ചെയ്യുക")}</button>
@@ -243,7 +304,7 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
           </div>
         )}
         {typing && phase !== "ended" && (
-          <form className="mt-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (typed.trim()) { const q = typed; setTyped(""); sp.stopListening(); void ask(q); } }}>
+          <form className="mt-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (typed.trim()) { const q = typed; setTyped(""); if (phase === "live" && liveRef.current) { curYou.current = null; append("you", q); liveRef.current.text(q); } else { sp.stopListening(); void ask(q); } } }}>
             <input value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus placeholder={L(lang, "Type your question…", "ചോദ്യം ടൈപ്പ് ചെയ്യൂ…")} className="flex-1 rounded-2xl bg-white/10 px-4 py-3 text-sm text-white outline-none placeholder:text-white/50 focus:bg-white/15" />
             <button className="grid size-12 place-items-center rounded-2xl bg-white text-[#0b3558]" aria-label="Send"><Send size={18} /></button>
           </form>
@@ -256,6 +317,15 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
           <div className="mb-6 mt-10 flex items-center justify-center gap-20">
             <div className="text-center"><button onClick={decline} className="call-btn bg-[#e5484d]" aria-label="Decline"><PhoneOff size={28} /></button><div className="mt-2 text-xs text-white/70">{L(lang, "Decline", "നിരസിക്കുക")}</div></div>
             <div className="text-center"><button onClick={() => void connect()} className="call-btn call-btn-answer bg-[#1fbf75]" aria-label="Answer"><Phone size={28} /></button><div className="mt-2 text-xs text-white/70">{L(lang, "Answer", "എടുക്കുക")}</div></div>
+          </div>
+        ) : phase === "live" ? (
+          <div className="mb-6 mt-8 space-y-3">
+            <div className="flex items-end justify-center gap-6">
+              <CtlBtn label={muted ? L(lang, "Unmute", "അൺമ്യൂട്ട്") : L(lang, "Mute", "മ്യൂട്ട്")} onClick={() => { const m = !muted; setMuted(m); liveRef.current?.setMuted(m); }} active={muted}>{muted ? <MicOff size={22} /> : <Mic size={22} />}</CtlBtn>
+              <div className="text-center"><button onClick={() => hangUp()} className="call-btn bg-[#e5484d]" aria-label="Hang up"><PhoneOff size={28} /></button><div className="mt-2 text-xs text-white/70">{L(lang, "End", "അവസാനിപ്പിക്കുക")}</div></div>
+              <CtlBtn label={L(lang, "Type", "ടൈപ്പ്")} onClick={() => setTyping((t) => !t)} active={typing}><Keyboard size={22} /></CtlBtn>
+            </div>
+            <p className="text-center text-xs text-white/50">{L(lang, "Talk naturally. You can interrupt Elister at any time.", "സ്വാഭാവികമായി സംസാരിക്കൂ. ഇടയ്ക്ക് കയറി ചോദിക്കാം.")}</p>
           </div>
         ) : phase === "opening" ? (
           <div className="mb-6 mt-8 space-y-4">

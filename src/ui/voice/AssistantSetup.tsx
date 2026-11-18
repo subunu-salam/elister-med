@@ -111,12 +111,12 @@ export function AssistantSetup({ initial, allowed }: { initial: Prefs; allowed: 
         <div className="space-y-3">
           <label className="flex items-center justify-between gap-3 text-sm"><span className="font-medium">Daily call</span>
             <input type="checkbox" checked={p.enabled} onChange={(e) => void save({ ...p, enabled: e.target.checked })} className="size-5 accent-[var(--primary)]" /></label>
-          <label className="flex items-center justify-between gap-3 text-sm"><span>Time (Dubai)</span>
+          <label className="flex items-center justify-between gap-3 text-sm"><span>Time</span>
             <input type="time" value={p.callTime} step={300} onChange={(e) => void save({ ...p, callTime: e.target.value })} className="rounded-xl border border-border bg-surface-2 px-3 py-1.5" /></label>
           <div className="text-sm"><div className="mb-1.5">Days</div><div className="flex gap-1">{DAYS.map((d, i) => <button type="button" key={d} onClick={() => toggleDay(i)} className={`flex-1 rounded-lg py-1.5 text-xs font-semibold ${p.days.includes(i) ? "bg-primary text-primary-fg" : "bg-surface-2 text-muted"}`}>{d}</button>)}</div></div>
           <label className="flex items-center justify-between gap-3 text-sm"><span>Language</span>
             <select value={p.lang} onChange={(e) => void save({ ...p, lang: e.target.value as Lang })} className="rounded-xl border border-border bg-surface-2 px-3 py-1.5"><option value="en">English</option><option value="ml">മലയാളം (Malayalam)</option></select></label>
-          <p className="text-xs text-muted">Calls after 3 pm report on that day; earlier calls report on the day before. <a href="/ai/schedule" className="font-medium text-primary">Open scheduled calls →</a></p>
+          <p className="text-xs text-muted">Calls after 3 pm (Dubai) report on that day; earlier calls report on the day before. <a href="/ai/schedule" className="font-medium text-primary">Open scheduled calls →</a></p>
         </div>
         <div>
           <div className="mb-1.5 text-sm font-medium">What should the report cover?</div>

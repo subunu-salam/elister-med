@@ -1,3 +1,4 @@
+import { zonedParts } from "./schedule-core";
 /**
  * Personal AI assistant ("Elister Brief"): pure composition logic, no database and no I/O, so it is unit-tested directly.
  * brief.ts gathers the figures from the clinic's own data; this file turns them into a spoken report in English or Malayalam,
@@ -322,9 +323,9 @@ const CALLBACK_RE = /\b(call|ring|phone) (me )?(back|again|later|in|at|after)\b|
 
 /**
  * When to call back, in minutes from now, from things like "call me back at 12:37", "at 5 pm", "in 10 minutes", "in an hour", "later".
- * Clock times are Dubai time (the clinic's time zone); a time that has already passed today means tomorrow. Null when no call-back is asked.
+ * Clock times are in the person's time zone (default Dubai); a time that has already passed today means tomorrow. Null when no call-back is asked.
  */
-export function parseCallback(q: string, now: Date): number | null {
+export function parseCallback(q: string, now: Date, tz = "Asia/Dubai"): number | null {
   if (!CALLBACK_RE.test(q) && !/\b(later|busy|not now)\b|പിന്നെ|തിരക്ക്/i.test(q)) return null;
   const t = q.toLowerCase().replace(/\./g, ":");
   const rel = /\b(?:in|after)\s+(an?|one|half an?|\d+(?:[.,]\d+)?)\s*(hours?|hrs?|h|minutes?|mins?|m)\b/.exec(t) ?? /(\d+)\s*(മിനിറ്റ്|മണിക്കൂർ)/.exec(t);
@@ -338,8 +339,7 @@ export function parseCallback(q: string, now: Date): number | null {
   if (at && (at[2] || at[3] || /\b(at|by|around)\s*\d/.test(t))) {
     let h = Number(at[1]); const m = Number(at[2] ?? 0);
     if (h > 23 || m > 59) return 30;
-    const local = new Date(now.getTime() + 4 * 3600_000); // Dubai wall clock
-    const nowMin = local.getUTCHours() * 60 + local.getUTCMinutes();
+    const nowMin = zonedParts(now, tz).minutes; // the person's own wall clock
     const cands: number[] = [];
     if (at[3]) cands.push(((h % 12) + (at[3] === "pm" ? 12 : 0)) * 60 + m);
     else if (h >= 13) cands.push(h * 60 + m);
@@ -386,7 +386,7 @@ export const MALAYALAM = /[ഀ-ൿ]/;
 export type VoiceAnswer = { intent: Intent; answer: string; switchLang?: Lang; href?: string; followUps: string[]; handled: boolean; end?: boolean; callbackMinutes?: number };
 
 /** Answers a follow-up from the report's own figures. Unknown questions return handled:false so the server can try the books. */
-export function answerFromFacts(q: string, f: BriefFacts, asked: Lang, now: Date = new Date()): VoiceAnswer {
+export function answerFromFacts(q: string, f: BriefFacts, asked: Lang, now: Date = new Date(), tz = "Asia/Dubai"): VoiceAnswer {
   // A question asked in Malayalam script gets a Malayalam answer, whatever the current setting.
   const lang: Lang = MALAYALAM.test(q) ? "ml" : asked;
   const ml = lang === "ml";
@@ -403,8 +403,8 @@ export function answerFromFacts(q: string, f: BriefFacts, asked: Lang, now: Date
     case "lang_ml": return r("ശരി, ഇനി മലയാളത്തിൽ സംസാരിക്കാം. എന്താണ് അറിയേണ്ടത്?", undefined, { switchLang: "ml", followUps: suggestions("ml", f).slice(0, 3) });
     case "lang_en": return r("Sure, switching to English. What would you like to know?", undefined, { switchLang: "en", followUps: suggestions("en", f).slice(0, 3) });
     case "callback": {
-      const mins = parseCallback(q, now) ?? 30;
-      const at = new Date(now.getTime() + mins * 60_000).toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Dubai" });
+      const mins = parseCallback(q, now, tz) ?? 30;
+      const at = new Date(now.getTime() + mins * 60_000).toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: tz });
       const name = firstName(f.recipient);
       return r(say(`Sure${name ? `, ${name}` : ""}. I'll call you back at ${at}${mins < 120 ? `, in ${mins < 60 ? `${mins} minute${mins === 1 ? "" : "s"}` : `${Math.round(mins / 6) / 10} hour${mins === 60 ? "" : "s"}`}` : ""}. Talk soon!`,
         `ശരി${name ? ` ${name}` : ""}. ${at}-ന് തിരികെ വിളിക്കാം.`), undefined, { end: true, callbackMinutes: mins });

@@ -17,7 +17,7 @@ import { askBooks, cfoInsights } from "@/modules/accounts/insights";
 import { demandForecast } from "./service";
 import { allowedSections, answerFromFacts, callOpening, composeBrief, firstName, MALAYALAM, SECTION_KEYS, type Brief, type BriefFacts, type Lang, type SectionKey, type VoiceAnswer } from "./brief-core";
 import { askExternal, voiceProvider } from "./voice-provider";
-import { callsOn, upcomingCalls } from "./schedule-core";
+import { DEFAULT_TZ, dailyDue, upcomingCalls, validTz, zonedYmd } from "./schedule-core";
 
 /**
  * Personal AI assistant. Gathers the figures for one day from the clinic's own data with the person's own permissions (so the super
@@ -48,17 +48,22 @@ export type AssistantPrefs = {
   days: number[];
   lang: Lang;
   sections: SectionKey[];
-  /** Dubai dates (YYYY-MM-DD) with no call, chosen on the calendar. */
+  /** Dates (YYYY-MM-DD, in tz) with no call, chosen on the calendar. */
   skipDates?: string[];
+  /** The person's time zone for the call time and calendar (default Asia/Dubai). */
+  tz?: string;
   /** Set by the super admin: the person cannot change these. */
   lockedBy?: string;
 };
 export const DEFAULT_PREFS: AssistantPrefs = { enabled: true, callTime: "18:00", days: [0, 1, 2, 3, 4, 5, 6], lang: "en", sections: [...SECTION_KEYS] };
 const prefsCol = (orgId: string) => tenantCol<AssistantPrefs & { _id: string; updatedAt: Date; updatedBy: string }>(orgId, "ai_assistant_prefs");
+/** Per-person call state: the last scheduled call (by date in the person's zone) and a pending call-back. */
+type CallState = { _id: string; lastDailyYmd?: string; lastDailyAt?: Date; snoozeUntil?: Date | null; lastCallAt?: Date };
+const callState = (orgId: string) => tenantCol<CallState>(orgId, "ai_call_state");
 
 export async function getPrefs(orgId: string, userId: string): Promise<AssistantPrefs> {
   const p = await prefsCol(orgId).findOne({ _id: userId } as never);
-  return p ? { enabled: p.enabled, callTime: p.callTime, days: p.days ?? DEFAULT_PREFS.days, lang: p.lang, sections: p.sections?.length ? p.sections : DEFAULT_PREFS.sections, skipDates: p.skipDates ?? [], lockedBy: p.lockedBy ?? undefined } : { ...DEFAULT_PREFS };
+  return p ? { enabled: p.enabled, callTime: p.callTime, days: p.days ?? DEFAULT_PREFS.days, lang: p.lang, sections: p.sections?.length ? p.sections : DEFAULT_PREFS.sections, skipDates: p.skipDates ?? [], tz: validTz(p.tz) ? p.tz : DEFAULT_TZ, lockedBy: p.lockedBy ?? undefined } : { ...DEFAULT_PREFS };
 }
 
 export function cleanPrefs(input: Partial<AssistantPrefs>, base: AssistantPrefs): AssistantPrefs {
@@ -66,9 +71,10 @@ export function cleanPrefs(input: Partial<AssistantPrefs>, base: AssistantPrefs)
   const sections = Array.isArray(input.sections) ? input.sections.filter((s): s is SectionKey => (SECTION_KEYS as readonly string[]).includes(s)) : base.sections;
   const days = Array.isArray(input.days) ? [...new Set(input.days.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))].sort() : base.days;
   if (!sections.length) throw new AppError("VALIDATION", "Choose at least one part of the report");
-  const today = dubaiParts(new Date()).ymd;
+  const today = zonedYmd(new Date(), validTz(input.tz) ? input.tz : base.tz);
   const skipDates = Array.isArray(input.skipDates) ? [...new Set(input.skipDates.filter((d) => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= today))].sort().slice(0, 120) : (base.skipDates ?? []).filter((d) => d >= today);
-  return { skipDates, enabled: typeof input.enabled === "boolean" ? input.enabled : base.enabled, callTime: time, days, lang: input.lang === "ml" ? "ml" : input.lang === "en" ? "en" : base.lang, sections, lockedBy: base.lockedBy };
+  const tz = validTz(input.tz) ? input.tz : (base.tz ?? DEFAULT_TZ);
+  return { tz, skipDates, enabled: typeof input.enabled === "boolean" ? input.enabled : base.enabled, callTime: time, days, lang: input.lang === "ml" ? "ml" : input.lang === "en" ? "en" : base.lang, sections, lockedBy: base.lockedBy };
 }
 
 /** The person's own settings ("which details do I want, and when should Elister call me"). */
@@ -260,7 +266,8 @@ export async function callPreview(ctx: Ctx & { name?: string }) {
 export async function askBrief(ctx: Ctx & { name?: string }, question: string, lang: Lang): Promise<VoiceAnswer & { source: "brief" | "books" | "model" | "none" }> {
   const q = question.trim().slice(0, 400);
   const { facts } = await getFacts(ctx);
-  const a = answerFromFacts(q, facts, lang);
+  const tz = (await getPrefs(ctx.orgId, ctx.userId)).tz;
+  const a = answerFromFacts(q, facts, lang, new Date(), tz);
   const effective: Lang = MALAYALAM.test(q) ? "ml" : lang;
   await withTransaction((s) => audit(s, { orgId: ctx.orgId, actorId: ctx.userId, action: "ai.brief_ask", resource: "ai", resourceId: a.intent, after: { handled: a.handled } }));
   if (a.handled) return { ...a, source: "brief" };
@@ -283,7 +290,7 @@ export async function askBrief(ctx: Ctx & { name?: string }, question: string, l
 // ---------------------------------------------------------------- the daily call
 
 /**
- * Scheduled job (Vercel Cron). For every active member who can use the assistant and whose call time has passed today (Dubai), builds the
+ * Scheduled job (cron, every few minutes). For every active member who can use the assistant and whose call time has passed today (in their own time zone), builds the
  * report with that member's own permissions, posts an in-app notification and rings their devices (web push). Each person is called at
  * most once a day.
  */
@@ -291,21 +298,19 @@ export async function placeDueCalls(now = new Date(), ring: (orgId: string, user
   const db = await getDb();
   const members = await db.collection<{ userId: string; orgId: string; active: boolean }>("memberships").find({ active: true }).toArray();
   const names = new Map((await db.collection("user").find({}, { projection: { name: 1 } }).toArray()).map((u) => [String(u._id), String((u as { name?: string }).name ?? "")]));
-  const minuteOfDay = dubaiParts(now).minutes, ymd = dubaiParts(now).ymd;
-  const asMinutes = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
   let called = 0, failed = 0;
   for (const m of members) {
     try {
       const ctx = await loadCtx(m.userId);
       if (!ctx || !canBrief(ctx)) continue;
-      const prefs = await getPrefs(ctx.orgId, ctx.userId);
-      const snap = await snaps(ctx.orgId).findOne({ _id: `${ctx.userId}:${ymd}` } as never);
-      // A "call me back in 30 minutes" that has come due rings regardless of the daily schedule.
-      const snoozeDue = !!snap?.snoozeUntil && snap.snoozeUntil.getTime() <= now.getTime();
-      // Otherwise: once a day, as soon as the call time has passed (works with a 5-minute, hourly or daily scheduler).
-      const dailyDue = callsOn(prefs, ymd) && asMinutes(prefs.callTime) <= minuteOfDay && !snap?.calledAt;
-      if (!snoozeDue && !dailyDue) continue;
-      await callNow({ ...ctx, name: names.get(m.userId) ?? "" }, ring, now);
+      const [prefs, st] = await Promise.all([getPrefs(ctx.orgId, ctx.userId), callState(ctx.orgId).findOne({ _id: ctx.userId } as never)]);
+      const today = zonedYmd(now, prefs.tz);
+      // A call-back that has come due rings regardless of the daily schedule.
+      const snoozeDue = !!st?.snoozeUntil && st.snoozeUntil.getTime() <= now.getTime();
+      // The daily call: once a day, as soon as its time has passed in the person's zone. Test calls ("Call me now") don't count.
+      const daily = dailyDue(prefs, now, st?.lastDailyYmd === today);
+      if (!snoozeDue && !daily) continue;
+      await callNow({ ...ctx, name: names.get(m.userId) ?? "" }, ring, now, daily ? "daily" : "callback");
       called++;
     } catch (e) { failed++; console.error("assistant call failed", m.userId, e); }
   }
@@ -317,35 +322,37 @@ export async function snoozeCall(ctx: Ctx, minutes = 30): Promise<Date> {
   assertBrief(ctx);
   const m = Math.min(24 * 60, Math.max(1, Math.round(minutes)));
   const until = new Date(Date.now() + m * 60_000);
-  const ymd = dubaiParts(new Date()).ymd;
-  await snaps(ctx.orgId).updateOne({ _id: `${ctx.userId}:${ymd}` } as never, { $set: { snoozeUntil: until } } as never);
-  await withTransaction((s) => audit(s, { orgId: ctx.orgId, actorId: ctx.userId, action: "ai.call_snoozed", resource: "ai", resourceId: ymd, after: { until } }));
+  await callState(ctx.orgId).updateOne({ _id: ctx.userId } as never, { $set: { snoozeUntil: until } } as never, undefined, { upsert: true });
+  await withTransaction((s) => audit(s, { orgId: ctx.orgId, actorId: ctx.userId, action: "ai.call_snoozed", resource: "ai", resourceId: ctx.userId, after: { until } }));
   return until;
 }
 
 /** Everything the "Scheduled calls" screen shows: settings, a pending call-back, and the next calls. */
 export async function getSchedule(ctx: Ctx) {
   assertBrief(ctx);
-  const now = new Date(), ymd = dubaiParts(now).ymd;
-  const [prefs, snap] = await Promise.all([getPrefs(ctx.orgId, ctx.userId), snaps(ctx.orgId).findOne({ _id: `${ctx.userId}:${ymd}` } as never)]);
-  const snoozeUntil = snap?.snoozeUntil && snap.snoozeUntil.getTime() > now.getTime() - 5 * 60_000 ? snap.snoozeUntil : null;
-  return { prefs, snoozeUntil, calledToday: snap?.calledAt ?? null, answeredToday: snap?.answeredAt ?? null, upcoming: upcomingCalls(prefs, now, { snoozeUntil, calledToday: !!snap?.calledAt, count: 6 }) };
+  const now = new Date();
+  const [prefs, st] = await Promise.all([getPrefs(ctx.orgId, ctx.userId), callState(ctx.orgId).findOne({ _id: ctx.userId } as never)]);
+  const dailyCalledToday = st?.lastDailyYmd === zonedYmd(now, prefs.tz);
+  const snoozeUntil = st?.snoozeUntil && st.snoozeUntil.getTime() > now.getTime() - 5 * 60_000 ? st.snoozeUntil : null;
+  return { prefs, snoozeUntil, calledToday: dailyCalledToday ? st?.lastDailyAt ?? null : null, lastCallAt: st?.lastCallAt ?? null, answeredToday: null as Date | null, upcoming: upcomingCalls(prefs, now, { snoozeUntil, dailyCalledToday, count: 6 }) };
 }
 
 /** Cancels a pending "call me back". */
 export async function cancelSnooze(ctx: Ctx) {
   assertBrief(ctx);
-  const ymd = dubaiParts(new Date()).ymd;
-  await snaps(ctx.orgId).updateOne({ _id: `${ctx.userId}:${ymd}` } as never, { $set: { snoozeUntil: null } } as never);
+  await callState(ctx.orgId).updateOne({ _id: ctx.userId } as never, { $set: { snoozeUntil: null } } as never);
 }
 
 /** Builds a fresh report and rings this person now (used by the schedule and by "Call me now"). */
-export async function callNow(ctx: Ctx & { name?: string }, ring: (orgId: string, userId: string) => Promise<number>, now = new Date()) {
+export async function callNow(ctx: Ctx & { name?: string }, ring: (orgId: string, userId: string) => Promise<number>, now = new Date(), kind: "daily" | "callback" | "manual" = "manual") {
   assertBrief(ctx);
   await getFacts(ctx, { refresh: true, now });
   const p = await callPreview(ctx);
   const ymd = dubaiParts(now).ymd;
-  await snaps(ctx.orgId).updateOne({ _id: `${ctx.userId}:${ymd}` } as never, { $set: { calledAt: now, snoozeUntil: null } } as never);
+  await snaps(ctx.orgId).updateOne({ _id: `${ctx.userId}:${ymd}` } as never, { $set: { calledAt: now } } as never);
+  // Only the scheduled call marks the day as done; a test call or call-back never cancels it. Any call clears a pending call-back.
+  const prefs = await getPrefs(ctx.orgId, ctx.userId);
+  await callState(ctx.orgId).updateOne({ _id: ctx.userId } as never, { $set: { lastCallAt: now, snoozeUntil: null, ...(kind === "daily" ? { lastDailyYmd: zonedYmd(now, prefs.tz), lastDailyAt: now } : {}) } } as never, undefined, { upsert: true });
   await withTransaction((s) => notifyUser(ctx.orgId, ctx.userId, { type: "ai.brief", refType: "brief", refId: ymd, severity: "info", title: `📞 ${p.body}` }, s));
   const devices = await ring(ctx.orgId, ctx.userId);
   return { devices, preview: p };
