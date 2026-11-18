@@ -276,7 +276,7 @@ export async function askBrief(ctx: Ctx & { name?: string }, question: string, l
     ...a, source: "none",
     answer: effective === "ml"
       ? "ക്ഷമിക്കണം, അത് എനിക്ക് മനസ്സിലായില്ല. വരുമാനം, രോഗികൾ, ബുക്കിംഗ്, കിട്ടാനുള്ള പണം, ക്യാഷ് എന്നിവയെക്കുറിച്ച് ചോദിക്കാം."
-      : "Sorry, I can't answer that from the clinic's figures yet. Try asking about revenue, patients, bookings, money to collect, profit or cash.",
+      : "I'm not sure I got that. You can ask me about revenue, patients, tomorrow's bookings, money to collect, profit or cash, or say \"call me back in 10 minutes\".",
   };
 }
 
@@ -315,7 +315,7 @@ export async function placeDueCalls(now = new Date(), ring: (orgId: string, user
 /** "Call me back in 30 minutes": the scheduler rings again once this time has passed. Returns the time it will ring. */
 export async function snoozeCall(ctx: Ctx, minutes = 30): Promise<Date> {
   assertBrief(ctx);
-  const m = Math.min(180, Math.max(5, Math.round(minutes)));
+  const m = Math.min(24 * 60, Math.max(1, Math.round(minutes)));
   const until = new Date(Date.now() + m * 60_000);
   const ymd = dubaiParts(new Date()).ymd;
   await snaps(ctx.orgId).updateOne({ _id: `${ctx.userId}:${ymd}` } as never, { $set: { snoozeUntil: until } } as never);
