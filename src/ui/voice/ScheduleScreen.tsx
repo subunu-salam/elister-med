@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { BellRing, CalendarDays, Check, ChevronLeft, ChevronRight, Clock, Loader2, Lock, Phone, PhoneForwarded, X } from "lucide-react";
 import { addDaysYmd, callsOn, DEFAULT_TZ, join24, split24, TZ_CHOICES, upcomingCalls, ymdDow, zonedYmd, type CallSchedule } from "@/modules/ai/schedule-core";
 import { ringHere } from "./CallListener";
+import { DeviceCalls } from "./DeviceCalls";
 
 type Prefs = CallSchedule & { lang: "en" | "ml"; sections: string[]; lockedBy?: string };
 type Upcoming = { at: string; ymd: string; kind: "callback" | "daily" };
@@ -91,7 +92,7 @@ export function ScheduleScreen({ initial, highlight }: { initial: ScheduleData; 
       <Link href="/ai/brief" className="inline-flex items-center gap-1 text-sm text-muted hover:text-fg"><ChevronLeft size={14} />Personal assistant</Link>
 
       {/* next call */}
-      <section className="brief-hero page-in relative overflow-hidden rounded-3xl p-6 text-white md:p-8">
+      <section className="brief-hero page-in relative overflow-hidden rounded-3xl p-5 text-white sm:p-6 md:p-8">
         <span aria-hidden className="brief-glow" />
         <div className="relative flex flex-wrap items-center gap-6">
           <div className={`call-avatar ${first ? "is-ringing" : ""}`} style={{ width: 96, height: 96 }}><span className="call-avatar-core" style={{ width: 80, height: 80, fontSize: 30 }}><Phone size={30} /></span><span className="call-wave" /><span className="call-wave w2" /></div>
@@ -99,18 +100,20 @@ export function ScheduleScreen({ initial, highlight }: { initial: ScheduleData; 
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">{first?.kind === "callback" ? "Call-back booked" : "Next call from Elister"}</p>
             {first ? (
               <>
-                <h1 className="mt-1 text-3xl font-semibold md:text-4xl">{fmtDay(first.ymd, today)}, {T(first.at)}</h1>
+                <h1 className="mt-1 text-2xl font-semibold sm:text-3xl md:text-4xl">{fmtDay(first.ymd, today)}, {T(first.at)}</h1>
                 <p className="mt-1 text-sm text-white/80">{countdown(first.at.getTime() - now)} · {tzLabel(tz)} time{tz !== DEFAULT_TZ ? ` · ${fmtTime(first.at, DEFAULT_TZ)} in Dubai` : ""}</p>
               </>
             ) : <h1 className="mt-1 text-2xl font-semibold">No calls scheduled</h1>}
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex w-full flex-wrap gap-2 sm:w-auto">
             {first?.kind === "callback" && <button onClick={() => void cancelCallback()} disabled={busy} className="inline-flex items-center gap-1.5 rounded-xl bg-white/15 px-4 py-2.5 text-sm font-semibold"><X size={15} />Cancel call-back</button>}
             <button onClick={() => void callNow()} disabled={busy} className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#0b3558] shadow-lg">{busy ? <Loader2 size={15} className="animate-spin" /> : <BellRing size={15} />}Call me now</button>
           </div>
         </div>
         {highlight === "callback" && first?.kind === "callback" && <p className="relative mt-4 rounded-2xl bg-white/10 p-3 text-sm">You asked Elister to call back. It will ring this device at {T(first.at)}. You can change your regular call below.</p>}
       </section>
+
+      <DeviceCalls />
 
       {err && <p className="rounded-2xl bg-warn/10 p-3 text-sm">{err}</p>}
 

@@ -310,3 +310,16 @@ tbody > tr { transition: background-color 0.15s; }
 .call-btn-answer { animation: call-bounce 1.6s ease-in-out infinite; }
 @keyframes call-bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
 @media (prefers-reduced-motion: reduce) { .call-wave, .call-avatar-core, .call-btn-answer { animation: none !important; } }
+
+/* ---------------- assistant: phones ---------------- */
+.call-safe { padding-top: max(1rem, env(safe-area-inset-top)); padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+@media (max-width: 640px) {
+  .call-avatar { width: 104px; height: 104px; }
+  .call-avatar-core { width: 88px; height: 88px; font-size: 34px; }
+  .call-btn { width: 60px; height: 60px; }
+  .call-card { padding: 32px 18px 26px; border-radius: 28px; }
+  .brief-orb { width: 132px; height: 132px; }
+  .brief-orb-core { width: 88px; height: 88px; }
+  .call-screen input, .call-screen select, .call-screen textarea { font-size: 16px; } /* stops iOS zooming into the field */
+}
+@media (max-height: 640px) { .call-avatar { width: 88px; height: 88px; } .call-avatar-core { width: 74px; height: 74px; font-size: 28px; } }
