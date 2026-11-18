@@ -3,6 +3,9 @@ import { createPrivateKey, createHash, sign } from "node:crypto";
 import { tenantCol } from "@/core/db";
 import { AppError } from "@/core/errors";
 import type { Ctx } from "@/core/rbac/authorize";
+import { applyDemoDefaults } from "@/core/demo-env";
+
+applyDemoDefaults(); // demo deployments get their push keys automatically
 
 /**
  * Web Push for the assistant's "incoming call", with no extra packages.

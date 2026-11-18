@@ -1,10 +1,7 @@
-# Rings the personal AI assistant's calls on time.
-# Vercel's free plan only allows one cron a day (vercel.json: 18:00 Dubai). This job checks every 5 minutes, so custom call times and
-# "call me back in 30 minutes" ring within a few minutes. GitHub may delay scheduled runs by a few minutes when busy.
-#
-# Setup (GitHub repo → Settings → Secrets and variables → Actions):
-#   ELISTER_URL   the production address, e.g. https://elister.devxpert.ae
-#   CRON_SECRET   the same value as CRON_SECRET in the Vercel project
+# Keeps the personal assistant's calls on time.
+# Every 5 minutes this pings Elister's /api/cron/tick: on Render's free plan that stops the server from sleeping (so its built-in
+# one-minute scheduler keeps running) and rings anything that is due. No secrets needed. GitHub may delay runs by a few minutes.
+# Optional repo secret ELISTER_URL overrides the address (default: the Render demo).
 name: Assistant calls
 on:
   schedule:
@@ -15,10 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Ring everyone who is due
+      - name: Wake Elister and ring due calls
         env:
           ELISTER_URL: ${{ secrets.ELISTER_URL }}
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          if [ -z "$ELISTER_URL" ] || [ -z "$CRON_SECRET" ]; then echo "ELISTER_URL / CRON_SECRET not set; skipping."; exit 0; fi
-          curl -fsS -m 240 -H "Authorization: Bearer $CRON_SECRET" "$ELISTER_URL/api/cron/daily-brief"
+          URL="${ELISTER_URL:-https://elister-med.onrender.com}"
+          curl -sS -m 180 --retry 2 --retry-delay 20 "$URL/api/cron/tick" || echo "Elister did not answer (it may be waking up)"

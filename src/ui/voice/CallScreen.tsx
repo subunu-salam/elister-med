@@ -228,7 +228,9 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
   }, [playReport, chapter, askOpening, brief.voice.live, startLive, lang]);
 
   // Answered from the notification: try to start straight away; if the browser wants a tap first, the "tap" phase asks for it.
-  useEffect(() => { if (answered) void connect(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  // Answered from the phone's notification: phones only allow sound and the microphone after a tap on the page, so show one big
+  // "Connect" button (phase "tap") instead of starting silently. Mark the call answered right away.
+  useEffect(() => { if (answered) void fetch("/api/ai/call/answer", { method: "POST" }).catch(() => null); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
   const decline = () => { stopRingtone(); void fetch("/api/ai/call/decline", { method: "POST" }).catch(() => null); router.push("/dashboard"); };
   const pause = () => { if (phase === "report") { sp.stop(); setPhase("paused"); } else if (phase === "paused") void playReport(chapter); };
@@ -251,7 +253,7 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
   return createPortal(
     <div className="call-screen" style={font}>
       <div className="call-bg" aria-hidden />
-      <div className="relative z-10 mx-auto flex min-h-[calc(100dvh-2rem)] max-w-3xl flex-col px-4 py-6 text-white">
+      <div className="call-safe relative z-10 mx-auto flex min-h-dvh max-w-3xl flex-col px-4 py-4 text-white sm:py-6">
         {/* header */}
         <div className="flex items-center justify-between text-xs text-white/70">
           <span className="inline-flex items-center gap-1.5"><span className={`size-2 rounded-full ${phase === "ended" ? "bg-white/40" : phase === "ringing" ? "animate-pulse bg-amber-300" : "bg-emerald-400"}`} />{phase === "ringing" ? L(lang, "Incoming call", "ഇൻകമിംഗ് കോൾ") : phase === "ended" ? L(lang, "Call ended", "കോൾ അവസാനിച്ചു") : mmss(secs)}</span>
@@ -261,7 +263,7 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
         </div>
 
         {/* caller */}
-        <div className="mt-8 flex flex-col items-center text-center">
+        <div className="mt-4 flex flex-col items-center text-center sm:mt-8">
           <div className={`call-avatar ${phase === "ringing" ? "is-ringing" : speaking ? "is-speaking" : phase === "listening" || (phase === "live" && liveState === "listening") ? "is-listening" : phase === "thinking" ? "is-thinking" : ""}`}>
             <span className="call-avatar-core">E</span><span className="call-wave" /><span className="call-wave w2" /><span className="call-wave w3" />
           </div>
@@ -276,18 +278,18 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
         )}
 
         {/* caption / live words */}
-        <div className="mt-6 min-h-24 rounded-3xl bg-black/20 p-5 text-center text-[17px] leading-relaxed backdrop-blur" aria-live="polite">
+        <div className="mt-4 max-h-[32dvh] min-h-20 overflow-y-auto rounded-3xl bg-black/20 p-4 text-center text-[15px] leading-relaxed backdrop-blur sm:mt-6 sm:p-5 sm:text-[17px]" aria-live="polite">
           {phase === "live" ? (caption || <span className="italic text-white/70">{muted ? L(lang, "You're on mute", "മ്യൂട്ട് ആണ്") : liveState === "connecting" ? L(lang, "Connecting…", "കണക്റ്റ് ചെയ്യുന്നു…") : L(lang, "Listening… just talk", "കേൾക്കുന്നു… സംസാരിച്ചോളൂ")}</span>)
             : phase === "opening" && partial ? <span className="italic text-white/80">{partial}</span>
             : phase === "listening" ? <span className="italic text-white/80">{partial || L(lang, "Go ahead, I'm listening…", "പറഞ്ഞോളൂ, ഞാൻ കേൾക്കുന്നു…")}</span>
             : phase === "ringing" ? <span className="text-white/80">{L(lang, "Your personal AI assistant is calling with today's summary.", "നിങ്ങളുടെ പേഴ്സണൽ AI അസിസ്റ്റന്റ് ഇന്നത്തെ സംഗ്രഹവുമായി വിളിക്കുന്നു.")}</span>
-            : phase === "tap" ? <button onClick={() => void connect()} className="mx-auto inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3 font-semibold text-[#0b3558]"><Volume2 size={18} />{L(lang, "Tap to hear Elister", "കേൾക്കാൻ ടാപ്പ് ചെയ്യുക")}</button>
+            : phase === "tap" ? <span className="text-white/85"><Volume2 size={18} className="me-1 inline" />{L(lang, "Call answered. Tap Connect to talk to Elister.", "കോൾ എടുത്തു. സംസാരിക്കാൻ കണക്റ്റ് അമർത്തൂ.")}</span>
             : caption}
         </div>
 
         {/* transcript of the conversation part */}
         {lines.length > 0 && (
-          <div className="mt-4 max-h-64 space-y-2 overflow-y-auto pe-1">
+          <div className="mt-3 max-h-[28dvh] space-y-2 overflow-y-auto overscroll-contain pe-1 sm:max-h-64">
             {lines.map((m, i) => (
               <div key={i} className={`flex ${m.who === "you" ? "justify-end" : ""}`}>
                 <div className={`max-w-[85%] rounded-2xl px-4 py-2 text-sm ${m.who === "you" ? "bg-white text-[#0b3558]" : "bg-white/10"}`} style={m.lang === "ml" ? ML_FONT : undefined}>{m.text}{m.href && <Link href={m.href} className="ms-2 text-xs underline opacity-80">open</Link>}</div>
@@ -314,13 +316,18 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
 
         {/* controls */}
         {phase === "ringing" ? (
-          <div className="mb-6 mt-10 flex items-center justify-center gap-20">
+          <div className="mb-4 mt-8 flex items-center justify-center gap-16 sm:mb-6 sm:mt-10 sm:gap-20">
             <div className="text-center"><button onClick={decline} className="call-btn bg-[#e5484d]" aria-label="Decline"><PhoneOff size={28} /></button><div className="mt-2 text-xs text-white/70">{L(lang, "Decline", "നിരസിക്കുക")}</div></div>
             <div className="text-center"><button onClick={() => void connect()} className="call-btn call-btn-answer bg-[#1fbf75]" aria-label="Answer"><Phone size={28} /></button><div className="mt-2 text-xs text-white/70">{L(lang, "Answer", "എടുക്കുക")}</div></div>
           </div>
+        ) : phase === "tap" ? (
+          <div className="mb-6 mt-8 text-center">
+            <button onClick={() => void connect()} className="call-btn call-btn-answer mx-auto bg-[#1fbf75]" style={{ width: 84, height: 84 }} aria-label="Connect"><Phone size={34} /></button>
+            <div className="mt-3 text-sm font-semibold">{L(lang, "Connect", "കണക്റ്റ്")}</div>
+          </div>
         ) : phase === "live" ? (
           <div className="mb-6 mt-8 space-y-3">
-            <div className="flex items-end justify-center gap-6">
+            <div className="flex items-end justify-center gap-5 sm:gap-6">
               <CtlBtn label={muted ? L(lang, "Unmute", "അൺമ്യൂട്ട്") : L(lang, "Mute", "മ്യൂട്ട്")} onClick={() => { const m = !muted; setMuted(m); liveRef.current?.setMuted(m); }} active={muted}>{muted ? <MicOff size={22} /> : <Mic size={22} />}</CtlBtn>
               <div className="text-center"><button onClick={() => hangUp()} className="call-btn bg-[#e5484d]" aria-label="Hang up"><PhoneOff size={28} /></button><div className="mt-2 text-xs text-white/70">{L(lang, "End", "അവസാനിപ്പിക്കുക")}</div></div>
               <CtlBtn label={L(lang, "Type", "ടൈപ്പ്")} onClick={() => setTyping((t) => !t)} active={typing}><Keyboard size={22} /></CtlBtn>
@@ -352,7 +359,7 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
             </div>
           </div>
         ) : (
-          <div className="mb-6 mt-8 flex items-end justify-center gap-5">
+          <div className="mb-4 mt-6 flex items-end justify-center gap-2.5 sm:mb-6 sm:mt-8 sm:gap-5">
             <CtlBtn label={phase === "paused" ? L(lang, "Resume", "തുടരുക") : L(lang, "Pause", "നിർത്തുക")} onClick={pause} disabled={phase !== "report" && phase !== "paused"}>{phase === "paused" ? <Play size={22} /> : <Pause size={22} />}</CtlBtn>
             <CtlBtn label={L(lang, "Questions", "ചോദ്യങ്ങൾ")} onClick={skipToQuestions} disabled={phase !== "report" && phase !== "paused"}><SkipForward size={22} /></CtlBtn>
             <div className="text-center"><button onClick={() => hangUp()} className="call-btn bg-[#e5484d]" aria-label="Hang up"><PhoneOff size={28} /></button><div className="mt-2 text-xs text-white/70">{L(lang, "End", "അവസാനിപ്പിക്കുക")}</div></div>
@@ -369,7 +376,7 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
 function CtlBtn({ children, label, onClick, disabled, active }: { children: React.ReactNode; label: string; onClick: () => void; disabled?: boolean; active?: boolean }) {
   return (
     <div className="text-center">
-      <button onClick={onClick} disabled={disabled} className={`grid size-14 place-items-center rounded-full transition ${active ? "bg-white text-[#0b3558]" : "bg-white/12 hover:bg-white/20"} disabled:opacity-35`} aria-label={label}>{children}</button>
+      <button onClick={onClick} disabled={disabled} className={`grid size-12 place-items-center rounded-full transition sm:size-14 ${active ? "bg-white text-[#0b3558]" : "bg-white/12 hover:bg-white/20"} disabled:opacity-35`} aria-label={label}>{children}</button>
       <div className="mt-2 text-[11px] text-white/70">{label}</div>
     </div>
   );

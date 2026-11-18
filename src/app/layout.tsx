@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, title: "Elister", statusBarStyle: "black-translucent" },
 };
-export const viewport: Viewport = { themeColor: [{ media: "(prefers-color-scheme: light)", color: "#e9edf4" }, { media: "(prefers-color-scheme: dark)", color: "#0d1017" }] };
+export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: [{ media: "(prefers-color-scheme: light)", color: "#e9edf4" }, { media: "(prefers-color-scheme: dark)", color: "#0d1017" }] };
 
 // Applies the saved theme before first paint to avoid a light/dark flash.
 const themeScript = `try{var t=localStorage.getItem("theme");if(t==="dark"||(!t&&matchMedia("(prefers-color-scheme: dark)").matches))document.documentElement.classList.add("dark")}catch(e){}`;
