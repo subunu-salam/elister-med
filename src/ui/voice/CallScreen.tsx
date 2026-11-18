@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { FileText, Keyboard, Mic, MicOff, Pause, Phone, PhoneOff, Play, Send, SkipForward, Volume2 } from "lucide-react";
 import type { Brief, Lang, VoiceAnswer } from "@/modules/ai/brief-core";
 import * as sp from "./speech";
-import { parseOpeningReply } from "@/modules/ai/brief-core";
+import { parseCallback, parseOpeningReply } from "@/modules/ai/brief-core";
 import { chime, startRingtone, stopRingtone } from "./ringtone";
 
 export type CallBrief = Brief & { voice: { natural: boolean }; opening?: string; firstName?: string };
@@ -83,6 +83,7 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
     setPhase("replying");
     const ok = await say(a.answer, l);
     if (!ok) return;
+    if (a.callbackMinutes) { void callBackLater(a.callbackMinutes, true); return; } // already said "I'll call you back at …"
     if (a.end) { hangUp("done"); return; }
     void listenLoop(a.switchLang ?? lang);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -127,15 +128,15 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
   const [callbackAt, setCallbackAt] = useState<string | null>(null);
   const tries = useRef(0);
   const carryOn = useCallback(() => { sp.stop(); sp.stopListening(); void playReport(1); }, [playReport]); // section 0 is the hello, already said
-  const callBackLater = useCallback(async () => {
+  /** Books a call-back `minutes` from now (default 30). spoken = the goodbye was already said (answer from the server). */
+  const callBackLater = useCallback(async (minutes = 30, spoken = false) => {
     sp.stop(); sp.stopListening();
-    let until = new Date(Date.now() + 30 * 60_000);
-    try { const r = await fetch("/api/ai/call/snooze", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ minutes: 30 }) }); if (r.ok) until = new Date((await r.json()).until); } catch { /* the in-app reminder below still works */ }
+    let until = new Date(Date.now() + minutes * 60_000);
+    try { const r = await fetch("/api/ai/call/snooze", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ minutes }) }); if (r.ok) until = new Date((await r.json()).until); } catch { /* the in-app reminder below still works */ }
     try { localStorage.setItem(CALLBACK_KEY, String(until.getTime())); window.dispatchEvent(new Event("elister:callback-set")); } catch { /* private mode */ }
     const t = until.toLocaleTimeString(lang === "ml" ? "ml-IN" : "en-GB", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Dubai" });
     setCallbackAt(t);
-    setPhase("replying");
-    await say(L(lang, `No problem${brief.firstName ? `, ${brief.firstName}` : ""}. I'll call you back at ${t}. Talk soon!`, `ശരി${brief.firstName ? ` ${brief.firstName}` : ""}. ${t}-ന് തിരികെ വിളിക്കാം.`), lang);
+    if (!spoken) { setPhase("replying"); await say(L(lang, `No problem${brief.firstName ? `, ${brief.firstName}` : ""}. I'll call you back at ${t}. Talk soon!`, `ശരി${brief.firstName ? ` ${brief.firstName}` : ""}. ${t}-ന് തിരികെ വിളിക്കാം.`), lang); }
     live.current = false; void chime("end"); setPhase("snoozed");
     setTimeout(() => router.push("/ai/schedule?from=callback"), 2500); // show when it will ring, and let them change it
   }, [lang, brief.firstName, say, router]);
@@ -151,7 +152,7 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
     if (!live.current) return;
     if (q) setLines((x) => [...x, { who: "you", text: q, lang }]);
     const v = parseOpeningReply(q);
-    if (v === "later") return void callBackLater();
+    if (v === "later") return void callBackLater(parseCallback(q, new Date()) ?? 30);
     if (v === "continue" || tries.current >= 1) return carryOn(); // after one retry, just carry on
     tries.current++; void askOpening();
   }, [brief.opening, brief.sections, lang, say, canListen, callBackLater, carryOn]);
@@ -260,7 +261,7 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
           <div className="mb-6 mt-8 space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <button onClick={carryOn} className="rounded-2xl bg-[#1fbf75] px-4 py-4 text-sm font-semibold text-white shadow-lg transition hover:-translate-y-0.5">{L(lang, "Yes, carry on", "തുടരൂ")}</button>
-              <button onClick={() => void callBackLater()} className="rounded-2xl bg-white/12 px-4 py-4 text-sm font-semibold transition hover:bg-white/20">{L(lang, "Call me back in 30 min", "30 മിനിറ്റ് കഴിഞ്ഞ് വിളിക്കൂ")}</button>
+              <button onClick={() => void callBackLater(30)} className="rounded-2xl bg-white/12 px-4 py-4 text-sm font-semibold transition hover:bg-white/20">{L(lang, "Call me back in 30 min", "30 മിനിറ്റ് കഴിഞ്ഞ് വിളിക്കൂ")}</button>
             </div>
             <p className="text-center text-xs text-white/60">{canListen ? L(lang, "Or just say \"carry on\" or \"call me later\".", "അല്ലെങ്കിൽ \"തുടരൂ\" അല്ലെങ്കിൽ \"പിന്നെ വിളിക്കൂ\" എന്ന് പറയൂ.") : ""}</p>
             <div className="text-center"><button onClick={() => hangUp()} className="call-btn mx-auto bg-[#e5484d]" aria-label="Hang up"><PhoneOff size={26} /></button></div>
