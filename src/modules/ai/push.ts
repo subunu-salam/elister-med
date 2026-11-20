@@ -59,7 +59,12 @@ export async function ringDevices(orgId: string, userId: string): Promise<number
       });
       if (r.status === 404 || r.status === 410) await subs(orgId).deleteMany({ _id: s._id } as never);
       else if (r.ok) { ok++; await subs(orgId).updateOne({ _id: s._id } as never, { $set: { lastOkAt: new Date() } } as never); }
-      else console.error("push rejected", r.status, (await r.text()).slice(0, 200));
+      else {
+        const body = (await r.text()).slice(0, 200);
+        console.error("push rejected", r.status, body);
+        // Registered with an old key (VapidPkHashMismatch) or otherwise permanently refused: drop it; the app re-registers on next open.
+        if (r.status === 400 || r.status === 403 || /VapidPkHashMismatch|UnauthorizedRegistration|InvalidRegistration/i.test(body)) await subs(orgId).deleteMany({ _id: s._id } as never);
+      }
     } catch (e) { console.error("push failed", e); }
   }));
   return ok;
