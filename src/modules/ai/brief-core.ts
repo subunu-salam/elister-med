@@ -302,7 +302,7 @@ export function composeBrief(f: BriefFacts, lang: Lang, opts: { sections?: reado
 
 export function suggestions(lang: Lang, f?: Pick<BriefFacts, "cash" | "scope">): string[] {
   const fin = f?.scope.finance ?? true, cli = f?.scope.clinical ?? true;
-  const en = [fin && "Who owes us the most?", cli && "How does tomorrow look?", fin && "How does this month compare?", f?.cash && "How long will our cash last?", fin && "Which doctor brought the most revenue?", "What needs my attention?"];
+  const en = [fin && "Who owes us the most?", cli && "How does tomorrow look?", fin && "How does this month compare?", f?.cash && "How long will our cash last?", fin && "Which doctor brought the most revenue?", "What needs my attention?", "Call me every day at 7 pm"];
   const ml = [fin && "ആരിൽ നിന്നാണ് കൂടുതൽ പണം കിട്ടാനുള്ളത്?", cli && "നാളെ എങ്ങനെയുണ്ട്?", fin && "ഈ മാസം എങ്ങനെയുണ്ട്?", f?.cash && "ക്യാഷ് എത്ര കാലം തികയും?", fin && "ഏത് ഡോക്ടറാണ് കൂടുതൽ വരുമാനം കൊണ്ടുവന്നത്?", "എന്താണ് ശ്രദ്ധിക്കേണ്ടത്?"];
   return (lang === "ml" ? ml : en).filter((x): x is string => typeof x === "string").slice(0, 5);
 }
@@ -317,9 +317,31 @@ export function shareText(b: Brief): string {
 
 // ---------------------------------------------------------------- follow-up questions
 
-export type Intent = "callback" | "week" | "revenue" | "patients" | "today" | "tomorrow" | "receivables" | "profit" | "cash" | "doctor" | "noshow" | "attention" | "month" | "repeat" | "help" | "lang_en" | "lang_ml" | "greeting" | "done" | "unknown";
+export type Intent = "reschedule" | "callback" | "newpatients" | "cancelled" | "first_appt" | "overdue" | "week" | "revenue" | "patients" | "today" | "tomorrow" | "receivables" | "profit" | "cash" | "doctor" | "noshow" | "attention" | "month" | "repeat" | "help" | "lang_en" | "lang_ml" | "greeting" | "done" | "unknown";
 
 const CALLBACK_RE = /\b(call|ring|phone) (me )?(back|again|later|in|at|after)\b|\bcall ?back\b|\b(remind|ring) me\b|\bcall me\b.*\b(\d{1,2}(:\d{2})?\s*(am|pm)?|minutes?|mins?|hours?|hrs?|later|tomorrow)\b|തിരികെ വിളി|തിരിച്ചു വിളി|പിന്നെ വിളി|പിന്നീട് വിളി/i;
+
+/** "Call me every day at 7 pm", "move my daily call to 19:30", "from now on ring me at 8:15 am", "reschedule my report to 6". */
+const DAILY_RE = /\b(every ?day|daily|each day|every evening|every morning|from now on|usual(ly)?|regular)\b|\b(change|move|shift|set|reschedule|update)\b.*\b(call|report|brief|schedule|time)\b|ദിവസവും|എല്ലാ ദിവസവും/i;
+
+/** The new daily call time as "HH:MM" (24h) when the owner asks to change the regular call; null otherwise. A bare hour 1–6 is read as pm. */
+export function parseDailyTime(q: string): string | null {
+  if (!DAILY_RE.test(q)) return null;
+  if (/\b(in|after)\s+(an?|one|half|\d+)\s*(hours?|hrs?|minutes?|mins?)\b/i.test(q)) return null; // relative = a one-off call-back
+  const t = q.toLowerCase().replace(/(\d)\.(\d{2})/g, "$1:$2");
+  const m = /\b(?:at|to|for|around|by)?\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?(?!\s*(?:minutes?|mins?|hours?|hrs?|days?|%))/.exec(t);
+  if (!m) return null;
+  let h = Number(m[1]); const mi = Number(m[2] ?? 0);
+  if (h > 23 || mi > 59) return null;
+  const ap = m[3]?.replace(/\./g, "");
+  if (ap === "pm" && h < 12) h += 12; else if (ap === "am" && h === 12) h = 0;
+  else if (!ap && h >= 1 && h <= 6) h += 12; // "call me every day at 6" means the evening
+  if (!m[2] && !ap && !/\b(at|to|for|around|by)\s*\d/.test(t)) return null;
+  return `${String(h).padStart(2, "0")}:${String(mi).padStart(2, "0")}`;
+}
+
+/** "19:30" → "7:30 pm" for speaking. */
+export const spokenClock = (hhmm: string) => { const [h, m] = hhmm.split(":").map(Number); return `${h % 12 || 12}${m ? `:${String(m).padStart(2, "0")}` : ""} ${h < 12 ? "am" : "pm"}`; };
 
 /**
  * When to call back, in minutes from now, from things like "call me back at 12:37", "at 5 pm", "in 10 minutes", "in an hour", "later".
@@ -353,6 +375,7 @@ export function parseCallback(q: string, now: Date, tz = "Asia/Dubai"): number |
 /** English and Malayalam (script and common Manglish) cue words. Order matters: more specific intents first. */
 const CUES: [Intent, RegExp][] = [
   // "call me back at 12:37 / in 10 minutes / later" works at any point in the call
+  ["reschedule", { test: (q: string) => parseDailyTime(q) !== null || (DAILY_RE.test(q) && /\b(call|ring|report|brief)\b|വിളി/i.test(q) && !/\b(in|after)\s+\d/.test(q)) } as RegExp],
   ["callback", CALLBACK_RE],
   // spending questions belong to the books (askBooks), not to the report's revenue figures
   ["unknown", /\b(spen[dt]|spending|expenses?|costs?|rent|salar(y|ies)|utilit(y|ies)|suppliers?|vendors?|bills? paid|paid (to|for))\b|ചെലവ്|വാടക|ശമ്പളം/i],
@@ -362,6 +385,10 @@ const CUES: [Intent, RegExp][] = [
   ["repeat", /\b(repeat|again|say that again|replay|summary|summari[sz]e)\b|വീണ്ടും|ആവർത്തി|ഒന്നുകൂടി|സംഗ്രഹം/i],
   ["help", /\b(what can you|help|what do you know|options)\b|എന്തൊക്കെ ചോദിക്കാം|സഹായം/i],
   ["tomorrow", /\btomorrow\b|നാളെ|naale/i],
+  ["first_appt", /\b(first (appointment|patient|booking)|start(s)? (at|time)|when does .* start|opens?)\b|ആദ്യ/i],
+  ["overdue", /\b(overdue|90 days|old(est)? (bills?|invoices?|dues?)|long pending|bad debt)\b|പഴയ കുടിശ്ശിക/i],
+  ["cancelled", /\b(cancel+(ed|ations?)?)\b|റദ്ദ്/i],
+  ["newpatients", /\bnew (patients?|registrations?|joiners?)\b|പുതിയ രോഗി/i],
   ["noshow", /no[- ]?show|did(n't| not) (come|turn up|show)|missed|വന്നില്ല|നോ ഷോ/i],
   ["cash", /\b(cash|bank|runway|burn|liquid|health score)\b|ക്യാഷ്|ബാങ്ക്|പണം എത്ര|തികയും|ആരോഗ്യ സ്കോർ/i],
   ["receivables", /\b(owe|owes|owed|outstanding|receivable|unpaid|pending|collect|due|chase|debt)\b|കിട്ടാനുള്ള|കുടിശ്ശിക|ബാക്കി|പിരിച്ചെടുക്ക|kittanulla/i],
@@ -383,7 +410,7 @@ export function detectIntent(q: string): Intent {
 export const MALAYALAM = /[ഀ-ൿ]/;
 /** end = the owner said they are done; the call can hang up after speaking the answer. */
 /** callbackMinutes: the owner asked to be called back that many minutes from now (the call then ends). */
-export type VoiceAnswer = { intent: Intent; answer: string; switchLang?: Lang; href?: string; followUps: string[]; handled: boolean; end?: boolean; callbackMinutes?: number };
+export type VoiceAnswer = { intent: Intent; answer: string; switchLang?: Lang; href?: string; followUps: string[]; handled: boolean; end?: boolean; callbackMinutes?: number; dailyTime?: string };
 
 /** Answers a follow-up from the report's own figures. Unknown questions return handled:false so the server can try the books. */
 export function answerFromFacts(q: string, f: BriefFacts, asked: Lang, now: Date = new Date(), tz = "Asia/Dubai"): VoiceAnswer {
@@ -435,6 +462,26 @@ export function answerFromFacts(q: string, f: BriefFacts, asked: Lang, now: Date
       return r(fin(d ? say(`${d.name} has brought in the most revenue this month, ${money(d.amount, lang)}.${f.next.busiest ? ` ${f.next.when === "tomorrow" ? "Tomorrow" : "Today"}, ${f.next.busiest.name} has the busiest list with ${f.next.busiest.count} patients.` : ""}`,
         `ഈ മാസം ഏറ്റവും കൂടുതൽ വരുമാനം ${d.name}-ൽ നിന്നാണ്, ${money(d.amount, lang)}.${f.next.busiest ? ` ${f.next.when === "tomorrow" ? "നാളെ" : "ഇന്ന്"} ഏറ്റവും തിരക്ക് ${f.next.busiest.name}-ക്കാണ്, ${f.next.busiest.count} പേർ.` : ""}`)
         : say("No doctor revenue has been recorded this month yet.", "ഈ മാസം ഡോക്ടർമാരുടെ വരുമാനം ഇതുവരെ രേഖപ്പെടുത്തിയിട്ടില്ല.")) + more, "/finance");
+    }
+    case "reschedule": {
+      const t = parseDailyTime(q);
+      if (!t) return r(say("Sure. What time should I call you every day? For example, say \"every day at 7 pm\".", "ശരി. എല്ലാ ദിവസവും ഏത് സമയത്ത് വിളിക്കണം? ഉദാഹരണത്തിന് \"എല്ലാ ദിവസവും 7 pm\" എന്ന് പറയൂ."), "/ai/schedule");
+      return r(say(`Done. From now on I'll call you every day at ${spokenClock(t)}.`, `ശരി. ഇനി മുതൽ എല്ലാ ദിവസവും ${spokenClock(t)}-ന് വിളിക്കാം.`) + more, "/ai/schedule", { dailyTime: t });
+    }
+    case "newpatients": return r(cli(say(`${plural(f.day.newPatients, "new patient", "new patients")} registered ${f.period === "today" ? "today" : "yesterday"}, out of ${plural(f.day.seen, "patient", "patients")} seen.`,
+      `${f.period === "today" ? "ഇന്ന്" : "ഇന്നലെ"} ${f.day.newPatients} പുതിയ രോഗികൾ, ആകെ ${f.day.seen} പേരെ കണ്ടു.`)) + more, "/patients");
+    case "cancelled": return r(cli(say(`${plural(f.day.cancelled, "booking was", "bookings were")} cancelled and ${plural(f.day.noShows, "patient", "patients")} did not show, out of ${f.day.appts} booked.`,
+      `${f.day.appts} ബുക്കിംഗിൽ ${f.day.cancelled} എണ്ണം റദ്ദാക്കി, ${f.day.noShows} പേർ വന്നില്ല.`)) + more, "/appointments");
+    case "first_appt": {
+      const w = f.next.when === "tomorrow" ? say("Tomorrow", "നാളെ") : say("Today", "ഇന്ന്");
+      return r(cli(f.next.booked ? say(`${w} has ${plural(f.next.booked, "booking", "bookings")}${f.next.firstAt ? `, the first at ${f.next.firstAt}` : ""}${f.next.busiest ? `. ${f.next.busiest.name} is the busiest with ${f.next.busiest.count}` : ""}.`,
+        `${w} ${f.next.booked} ബുക്കിംഗുകൾ${f.next.firstAt ? `, ആദ്യത്തേത് ${f.next.firstAt}-ന്` : ""}${f.next.busiest ? `. ഏറ്റവും തിരക്ക് ${f.next.busiest.name}-ക്ക്, ${f.next.busiest.count} പേർ` : ""}.`)
+        : say(`${w} has no bookings yet.`, `${w} ഇതുവരെ ബുക്കിംഗ് ഇല്ല.`)) + more, "/appointments");
+    }
+    case "overdue": {
+      const c = f.ar.chase[0];
+      return r(fin(say(`${money(f.ar.over90, lang)} of patient bills are more than 90 days old, and ${money(f.ar.over30, lang)} more than 30 days.${f.ar.tradeOverdue ? ` Insurers and corporate clients have ${money(f.ar.tradeOverdue, lang)} overdue.` : ""}${c ? ` The biggest to chase is ${c.name}, ${money(c.amount, lang)} for ${c.days} days.` : ""}`,
+        `90 ദിവസത്തിലധികം പഴയ ബില്ലുകൾ ${money(f.ar.over90, lang)}, 30 ദിവസത്തിലധികം ${money(f.ar.over30, lang)}.${c ? ` ഏറ്റവും വലുത് ${c.name}, ${money(c.amount, lang)}, ${c.days} ദിവസം.` : ""}`)) + more, "/billing");
     }
     case "noshow": {
       const rate = f.day.appts ? Math.round((f.day.noShows / f.day.appts) * 100) : 0;

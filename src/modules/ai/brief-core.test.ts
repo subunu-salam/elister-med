@@ -149,3 +149,25 @@ describe("call me back", () => {
     expect(parseOpeningReply("call me at 5 pm")).toBe("later");
   });
 });
+
+describe("voice reschedule of the daily call", () => {
+  it("reads the new regular time", async () => {
+    const { parseDailyTime } = await import("./brief-core");
+    expect(parseDailyTime("Call me every day at 7 pm")).toBe("19:00");
+    expect(parseDailyTime("move my daily call to 19:30")).toBe("19:30");
+    expect(parseDailyTime("from now on call me at 8:15 am")).toBe("08:15");
+    expect(parseDailyTime("reschedule my report to 6")).toBe("18:00");
+    expect(parseDailyTime("call me back in 30 minutes")).toBeNull();
+    expect(parseDailyTime("call me back at 5 pm")).toBeNull();
+  });
+  it("routes daily vs one-off requests to the right intent", async () => {
+    const { detectIntent } = await import("./brief-core");
+    expect(detectIntent("call me every day at 7 pm")).toBe("reschedule");
+    expect(detectIntent("change my call time")).toBe("reschedule");
+    expect(detectIntent("call me back in 10 minutes")).toBe("callback");
+    expect(detectIntent("how many new patients today")).toBe("newpatients");
+    expect(detectIntent("how many cancellations")).toBe("cancelled");
+    expect(detectIntent("what is overdue more than 90 days")).toBe("overdue");
+    expect(detectIntent("when is the first appointment")).toBe("first_appt");
+  });
+});

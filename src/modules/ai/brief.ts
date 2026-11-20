@@ -263,6 +263,8 @@ export async function callPreview(ctx: Ctx & { name?: string }) {
  * A spoken or typed follow-up. Order: the report's own figures, then the books ("how much did we spend on rent last month"), then,
  * only when an external voice model has been approved and configured, a model answer grounded in the same aggregate figures.
  */
+const effectiveLang = (q: string, lang: Lang): Lang => (MALAYALAM.test(q) ? "ml" : lang);
+
 export async function askBrief(ctx: Ctx & { name?: string }, question: string, lang: Lang): Promise<VoiceAnswer & { source: "brief" | "books" | "model" | "none" }> {
   const q = question.trim().slice(0, 400);
   const { facts } = await getFacts(ctx);
@@ -270,6 +272,11 @@ export async function askBrief(ctx: Ctx & { name?: string }, question: string, l
   const a = answerFromFacts(q, facts, lang, new Date(), tz);
   const effective: Lang = MALAYALAM.test(q) ? "ml" : lang;
   await withTransaction((s) => audit(s, { orgId: ctx.orgId, actorId: ctx.userId, action: "ai.brief_ask", resource: "ai", resourceId: a.intent, after: { handled: a.handled } }));
+  if (a.dailyTime) {
+    // "Call me every day at 7 pm": change the regular call, not just today's.
+    try { await savePrefs(ctx, { callTime: a.dailyTime }); }
+    catch { return { ...a, dailyTime: undefined, source: "brief", answer: effectiveLang(q, lang) === "ml" ? "ക്ഷമിക്കണം, നിങ്ങളുടെ കോൾ സമയം അഡ്മിനിസ്ട്രേറ്റർ നിയന്ത്രിക്കുന്നു. എനിക്ക് അത് മാറ്റാൻ കഴിയില്ല." : "Sorry, your call time is managed by the administrator, so I can't change it. Anything else?" }; }
+  }
   if (a.handled) return { ...a, source: "brief" };
   const more = effective === "ml" ? " മറ്റെന്തെങ്കിലും?" : " Anything else?";
 
