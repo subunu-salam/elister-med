@@ -37,6 +37,7 @@ export function Shell({
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [drawer, setDrawer] = useState(false);
+  const tabs = useMemo(() => ["/dashboard", "/appointments", "/patients", "/ai/brief", "/queue", "/billing"].map((h) => items.find((i) => i.href === h)).filter((i): i is Item => !!i).slice(0, 4), [items]);
   const [menu, setMenu] = useState(false);
   const [busy, setBusy] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -129,9 +130,9 @@ export function Shell({
       <aside data-collapsed={collapsed} className="sidebar no-print sticky top-0 hidden h-screen shrink-0 flex-col md:flex">{nav(collapsed)}</aside>
 
       {drawer && (
-        <div className="no-print fixed inset-0 z-50 md:hidden" role="dialog" aria-modal="true" aria-label="Menu">
+        <div className="no-print fixed inset-0 z-[970] md:hidden" role="dialog" aria-modal="true" aria-label="Menu">
           <div className="absolute inset-0 bg-[#0b3558]/35" onClick={() => setDrawer(false)} />
-          <aside data-collapsed="false" className="sidebar dock-in absolute inset-y-0 start-0 flex flex-col shadow-[var(--shadow-pop)]">
+          <aside data-collapsed="false" className="sidebar dock-in absolute inset-y-0 start-0 flex !w-[min(86vw,300px)] flex-col overflow-y-auto bg-surface pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] shadow-[var(--shadow-pop)]">
             <button onClick={() => setDrawer(false)} aria-label="Close menu" className={cn(iconBtn, "absolute end-2 top-3")}><X size={18} /></button>
             {nav(false)}
           </aside>
@@ -178,8 +179,16 @@ export function Shell({
             {children}
           </div>
         </main>
-        <footer className="no-print px-6 py-4 text-center text-[11px] text-muted">Elister Med · Your Trusted Family Healthcare Partner in Dubai · Demo environment with synthetic data</footer>
+        <footer className="no-print px-6 pb-24 pt-4 text-center md:pb-4 text-[11px] text-muted">Elister Med · Your Trusted Family Healthcare Partner in Dubai · Demo environment with synthetic data</footer>
       </div>
+      {/* Phones: an always-visible bottom bar, so navigation never depends on finding the menu button at the top. */}
+      <nav aria-label="Main" className="mobile-tabbar no-print fixed inset-x-0 bottom-0 z-[45] grid grid-cols-5 border-t border-border md:hidden">
+        {tabs.map((t) => {
+          const Icon = ICONS[t.icon]; const on = path === t.href || path.startsWith(t.href + "/");
+          return <Link key={t.href} href={t.href} aria-current={on ? "page" : undefined} className={cn("flex min-w-0 flex-col items-center justify-center gap-0.5 py-2 text-[10.5px] font-medium", on ? "text-primary" : "text-muted")}><Icon size={20} /><span className="max-w-full truncate px-1">{t.label}</span></Link>;
+        })}
+        <button onClick={() => setDrawer(true)} aria-label="Open full menu" className="flex flex-col items-center justify-center gap-0.5 py-2 text-[10.5px] font-medium text-muted"><Menu size={20} /><span>Menu</span></button>
+      </nav>
       {showChat && <ChatDock />}
       {open && <Palette onClose={() => setOpen(false)} entries={[...items.map((i) => ({ href: i.href, label: i.label })), ...quick]} />}
     </div>

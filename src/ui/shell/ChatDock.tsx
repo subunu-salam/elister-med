@@ -52,7 +52,7 @@ export function ChatDock() {
   if (!open) {
     return (
       <button onClick={() => setOpen(true)} aria-label={unread ? `Open messages, ${unread} unread` : "Open messages"}
-        className="no-print fixed bottom-4 end-4 z-40 flex h-12 items-center gap-2.5 rounded-full bg-ink ps-4 pe-5 text-sm font-medium text-[var(--btn-fg)] shadow-[0_18px_40px_-16px_rgba(11,53,88,.7)] transition hover:-translate-y-0.5 active:scale-95">
+        className="no-print fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] end-4 z-40 flex h-12 md:bottom-4 items-center gap-2.5 rounded-full bg-ink ps-4 pe-5 text-sm font-medium text-[var(--btn-fg)] shadow-[0_18px_40px_-16px_rgba(11,53,88,.7)] transition hover:-translate-y-0.5 active:scale-95">
         <MessageCircle size={18} />Messages
         {unread > 0 && <span className="grid min-w-5 place-items-center rounded-full brand-grad px-1.5 text-[11px] font-semibold text-white">{unread > 99 ? "99+" : unread}</span>}
       </button>

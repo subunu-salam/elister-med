@@ -340,3 +340,7 @@ button, a, [role="button"] { touch-action: manipulation; }
 @layer base { :where(.grid) { grid-template-columns: minmax(0, 1fr); } } /* any grid-cols-* utility still wins */
 html, body { max-width: 100%; overflow-x: clip; }
 img, svg, video, canvas { max-width: 100%; }
+/* Phone bottom navigation */
+.mobile-tabbar { background: color-mix(in srgb, var(--surface) 94%, transparent); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); padding-bottom: env(safe-area-inset-bottom); }
+/* The topbar stays visible while scrolling on phones too. */
+.topbar { padding-top: env(safe-area-inset-top); height: auto; min-height: 4rem; }
