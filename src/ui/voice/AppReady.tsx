@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { BellRing, Bookmark, CheckCircle2, Download, Loader2, Share, X } from "lucide-react";
 import { BRAVE_HINT, enableCallsHere, isBrave } from "./DeviceCalls";
 
@@ -37,6 +38,7 @@ function unblockSteps(): string[] {
  * "Not now" hides it for a day; the Scheduled calls page always has the same controls.
  */
 export function AppReady() {
+  const path = usePathname();
   const [, force] = useState(0);
   const [calls, setCalls] = useState<"unknown" | "on" | "off" | "blocked" | "na">("unknown");
   const [busy, setBusy] = useState(false);
@@ -64,7 +66,7 @@ export function AppReady() {
 
   const ios = typeof navigator !== "undefined" && isIos();
   const needInstall = !installed && (ios || !!deferred || /android/i.test(typeof navigator !== "undefined" ? navigator.userAgent : ""));
-  if (hidden || calls === "unknown" || (calls === "on" && !needInstall) || (calls === "na" && !needInstall)) return null;
+  if (hidden || path?.startsWith("/ai/call") || calls === "unknown" || (calls === "on" && !needInstall && !msg) || (calls === "na" && !needInstall)) return null;
 
   const install = async () => {
     if (deferred) { await deferred.prompt(); const c = await deferred.userChoice; if (c.outcome === "accepted") { deferred = null; setInstalled(true); } force((n) => n + 1); return; }
@@ -95,13 +97,14 @@ export function AppReady() {
   );
 
   return (
-    <div className="app-ready fixed inset-x-3 bottom-3 z-[900] mx-auto max-h-[80dvh] max-w-xl overflow-y-auto rounded-3xl border border-white/10 bg-[#0b3558] p-4 text-white shadow-2xl sm:bottom-5" role="region" aria-label="Get Elister's calls on this device">
-      <button onClick={dismiss} className="absolute end-2 top-2 grid size-9 place-items-center rounded-full text-white/70 hover:bg-white/10" aria-label="Not now"><X size={18} /></button>
+    <div className="fixed inset-0 z-[950] grid place-items-center bg-black/60 p-3 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Set up Elister on this device">
+    <div className="relative max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-3xl border border-white/10 bg-[#0b3558] p-5 text-white shadow-2xl">
+      <button onClick={dismiss} className="absolute end-2 top-2 grid size-9 place-items-center rounded-full text-white/70 hover:bg-white/10" aria-label="Do it later"><X size={18} /></button>
       <div className="flex items-start gap-3 pe-8">
         <img src="/brand/icon-192.png" alt="" className="size-11 shrink-0 rounded-2xl bg-white" />
         <div className="min-w-0">
-          <div className="font-semibold">Get your assistant&apos;s call like a phone call</div>
-          <p className="mt-0.5 text-sm text-white/75">Two quick steps, so Elister can ring you at your scheduled time even when the app is closed.</p>
+          <div className="text-lg font-semibold">Set up Elister on this device</div>
+          <p className="mt-0.5 text-sm text-white/75">Two quick steps, so your AI assistant can ring you with its daily report at your scheduled time, even when the app is closed.</p>
         </div>
       </div>
       <ol className="mt-3 space-y-3">
@@ -128,6 +131,10 @@ export function AppReady() {
         </Step>
       </ol>
       {msg && <p className="mt-3 rounded-2xl bg-white/10 p-3 text-sm">{msg}</p>}
+      <button onClick={dismiss} className="mt-4 w-full rounded-xl border border-white/25 px-4 py-2.5 text-sm font-semibold text-white/90 hover:bg-white/10">
+        {calls === "on" ? "Continue to Elister" : "Do it later"}
+      </button>
+    </div>
     </div>
   );
 }
