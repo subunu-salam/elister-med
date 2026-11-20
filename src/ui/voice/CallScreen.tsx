@@ -226,16 +226,25 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lang, tz, finishLive]);
 
+  const connecting = useRef(false);
   const connect = useCallback(async () => {
+    if (connecting.current) return; // a double tap must not start a second voice
+    connecting.current = true;
+    try { await connectOnceRef.current(); } finally { connecting.current = false; }
+  }, []);
+  const connectOnce = async () => {
+    sp.stop(); liveRef.current?.close(); liveRef.current = null; // nothing else may be talking
     sp.unlock(); stopRingtone();
     started.current = started.current ?? Date.now();
     live.current = true;
     void fetch("/api/ai/call/answer", { method: "POST" }).catch(() => null);
     await chime("connect");
-    if (brief.voice.live && chapter === 0) { setCaption(L(lang, "Connecting…", "കണക്റ്റ് ചെയ്യുന്നു…")); if (await startLive()) return; setCaption(""); }
+    if (brief.voice.live && chapter === 0) { setCaption(L(lang, "Connecting…", "കണക്റ്റ് ചെയ്യുന്നു…")); if (await startLive()) { sp.stop(); return; } liveRef.current?.close(); liveRef.current = null; setCaption(""); }
     await new Promise((r) => setTimeout(r, 450));
     if (chapter > 0) void playReport(chapter); else { tries.current = 0; void askOpening(); }
-  }, [playReport, chapter, askOpening, brief.voice.live, startLive, lang]);
+  };
+  const connectOnceRef = useRef(connectOnce);
+  connectOnceRef.current = connectOnce; // always the latest chapter / language
 
   // Answered from the notification: try to start straight away; if the browser wants a tap first, the "tap" phase asks for it.
   // Answered from the phone's notification: phones only allow sound and the microphone after a tap on the page, so show one big

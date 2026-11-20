@@ -25,6 +25,12 @@ type Msg = {
   serverContent?: { interrupted?: boolean; turnComplete?: boolean; inputTranscription?: { text?: string }; outputTranscription?: { text?: string }; modelTurn?: { parts?: { inlineData?: { data?: string } }[] } };
 };
 
+/** Only one live call may exist: a second one (double tap, second tab of the same page) would be a second voice talking over the first. */
+let current: LiveCall | null = null;
+/** Phones play the call through the loudspeaker next to the mic; even with echo cancellation the model hears itself and "answers"
+ * its own voice. On touch devices the mic sends silence while Elister is speaking (plus a short tail). Desktop keeps full barge-in. */
+const halfDuplex = () => typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
+
 export class LiveCall {
   private ws: WebSocket | null = null;
   private ctx: AudioContext | null = null;
@@ -34,6 +40,7 @@ export class LiveCall {
   private playAt = 0;
   private playing: AudioBufferSourceNode[] = [];
   private muted = false;
+  private quietUntil = 0;
   open = false;
   constructor(private h: LiveHandlers) {}
 
@@ -55,7 +62,7 @@ export class LiveCall {
     const s = c.createBufferSource(); s.buffer = buf; s.connect(c.destination);
     this.playAt = Math.max(this.playAt, c.currentTime + 0.05); s.start(this.playAt); this.playAt += buf.duration;
     this.playing.push(s);
-    s.onended = () => { this.playing = this.playing.filter((x) => x !== s); if (!this.playing.length) this.h.state?.(this.mic && !this.muted ? "listening" : "idle"); };
+    s.onended = () => { this.playing = this.playing.filter((x) => x !== s); this.quietUntil = c.currentTime + 0.6; if (!this.playing.length) this.h.state?.(this.mic && !this.muted ? "listening" : "idle"); };
     this.h.state?.("speaking");
   }
 
@@ -75,6 +82,8 @@ export class LiveCall {
 
   /** Opens the session (server gives a one-use token and the setup). Resolves false if it could not connect. */
   async connect(lang?: string): Promise<boolean> {
+    if (current && current !== this) current.close();
+    current = this;
     this.audio(); this.h.state?.("connecting");
     const r = await fetch("/api/ai/live", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ lang }) });
     if (!r.ok) return false;
@@ -103,6 +112,7 @@ export class LiveCall {
     const an = c.createAnalyser(); an.fftSize = 256; this.src.connect(an); const d = new Uint8Array(an.fftSize);
     const out = (buf: ArrayBuffer) => {
       if (this.muted) return;
+      if (halfDuplex() && (this.playing.length > 0 || c.currentTime < this.quietUntil)) buf = new ArrayBuffer(buf.byteLength); // silence while Elister talks
       const u = new Uint8Array(buf); let bin = ""; for (let i = 0; i < u.length; i += 0x8000) bin += String.fromCharCode(...u.subarray(i, i + 0x8000));
       this.send({ realtimeInput: { audio: { data: btoa(bin), mimeType: "audio/pcm;rate=16000" } } });
       an.getByteTimeDomainData(d); let sum = 0; for (const v of d) { const x = v - 128; sum += x * x; } this.h.level?.(Math.min(1, Math.sqrt(sum / d.length) / 20));
@@ -122,5 +132,5 @@ export class LiveCall {
   stopMic() { try { this.node?.disconnect(); this.src?.disconnect(); this.mic?.getTracks().forEach((t) => t.stop()); } catch { /* gone */ } this.mic = null; this.node = null; this.src = null; }
   /** Sends a text turn (used for "CALL_CONNECTED" and typed questions). */
   text(t: string) { this.flush(); this.send({ clientContent: { turns: [{ role: "user", parts: [{ text: t }] }], turnComplete: true } }); }
-  close() { this.stopMic(); this.flush(); this.open = false; try { this.ws?.close(); } catch { /* closed */ } this.ws = null; }
+  close() { if (current === this) current = null; this.stopMic(); this.flush(); this.open = false; try { this.ws?.close(); } catch { /* closed */ } this.ws = null; }
 }
