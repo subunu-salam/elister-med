@@ -25,7 +25,15 @@ export function CallListener() {
   const [call, setCall] = useState<Info | null>(null);
 
   useEffect(() => {
-    void registerSw();
+    // Keep this device's push registration matching the server's current key, without asking anything:
+    // if notifications are already allowed, (re)subscribe silently. Fixes "VapidPkHashMismatch" after keys change.
+    void registerSw().then(async () => {
+      try {
+        if (!("Notification" in window) || Notification.permission !== "granted") return;
+        const { enableCallsHere } = await import("./DeviceCalls");
+        await enableCallsHere();
+      } catch { /* the setup pop-up still offers it */ }
+    });
     const onSw = (e: MessageEvent) => { if (e.data?.type === "elister-call") setCall(e.data.info as Info); };
     const onLocal = (e: Event) => setCall((e as CustomEvent<Info>).detail);
     navigator.serviceWorker?.addEventListener("message", onSw);
