@@ -2,9 +2,11 @@
  * The server sends an empty web push. We ask the app who is calling, then show a ringing notification with Answer / Decline.
  * If an Elister tab is open, it also gets a message so it can show the full-screen incoming-call screen with the ringtone. */
 const CALL_TAG = "elister-call";
+const RING_TIMES = 6, RING_GAP_MS = 5000;
+let ringing = false;
 const RING = [600, 250, 600, 250, 600, 900, 600, 250, 600, 250, 600]; // phone-style vibration (Android)
 
-const SHELL = "elister-shell-v1";
+const SHELL = "elister-shell-v2";
 const OFFLINE = "/brand/icon-192.png";
 self.addEventListener("install", (e) => { self.skipWaiting(); e.waitUntil(caches.open(SHELL).then((c) => c.addAll(["/manifest.webmanifest", OFFLINE, "/brand/badge-96.png"])).catch(() => null)); });
 // Navigations go to the network; if the device is offline, show a small "you're offline" page instead of the browser's error.
@@ -36,7 +38,9 @@ self.addEventListener("push", (event) => {
     } catch (_) { /* offline: generic text */ }
     const tabs = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     for (const c of tabs) c.postMessage({ type: "elister-call", info });
-    await self.registration.showNotification("📞 Incoming call · Elister AI", {
+    ringing = true;
+    const show = () => self.registration.showNotification("📞 Incoming call · Elister AI", opts);
+    const opts = {
       body: info.body,
       tag: CALL_TAG,
       renotify: true,
@@ -50,11 +54,22 @@ self.addEventListener("push", (event) => {
         { action: "answer", title: "📞 Answer" },
         { action: "decline", title: "Decline" },
       ],
-    });
+    };
+    await show();
+    // Ring like a phone: re-alert (sound + vibration) every few seconds for about 30 s, until answered, declined or swiped away.
+    for (let i = 1; i <= RING_TIMES && ringing; i++) {
+      await new Promise((r) => setTimeout(r, RING_GAP_MS));
+      const open = await self.registration.getNotifications({ tag: CALL_TAG });
+      if (!ringing || !open.length) break;
+      await show();
+    }
+    ringing = false;
   })());
 });
 
+self.addEventListener("notificationclose", () => { ringing = false; });
 self.addEventListener("notificationclick", (event) => {
+  ringing = false;
   event.notification.close();
   if (event.action === "decline") {
     event.waitUntil(fetch("/api/ai/call/decline", { method: "POST", credentials: "include" }).catch(() => null));

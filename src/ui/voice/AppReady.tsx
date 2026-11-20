@@ -7,7 +7,10 @@ type InstallEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{
 let deferred: InstallEvent | null = null;
 const listeners = new Set<() => void>();
 if (typeof window !== "undefined") {
-  // Chrome / Edge / Android fire this once the app is installable; keep it for our own "Install" button.
+  // Chrome / Edge / Android fire this once the app is installable (captured early in layout.tsx); keep it for our own "Install" button.
+  const w = window as unknown as { __bip?: InstallEvent };
+  if (w.__bip) deferred = w.__bip;
+  window.addEventListener("elister:installable", () => { deferred = w.__bip ?? deferred; listeners.forEach((f) => f()); });
   window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferred = e as InstallEvent; listeners.forEach((f) => f()); });
   window.addEventListener("appinstalled", () => { deferred = null; listeners.forEach((f) => f()); });
 }
@@ -16,11 +19,22 @@ const KEY = "elister:app-ready-dismissed";
 const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const standalone = () => window.matchMedia("(display-mode: standalone)").matches || (navigator as unknown as { standalone?: boolean }).standalone === true;
 
+/** How to unblock notifications on this exact device (the browser will not ask again once they are blocked). */
+function unblockSteps(): string[] {
+  const p = platform(), app = standalone();
+  if (p === "android") return app
+    ? ["Long-press the Elister icon on your home screen → App info.", "Tap Notifications and turn on Allow notifications (and the call/assistant category).", "Come back to Elister and tap Try again."]
+    : ["Tap the icon left of the address bar → Permissions (or Site settings) → Notifications → Allow.", "No Notifications option there? Open phone Settings → Apps → Chrome → Notifications and turn them on.", "Come back and tap Try again."];
+  if (p === "ios") return ["Open iPhone Settings → Notifications → Elister.", "Turn on Allow Notifications, Sounds and Lock Screen.", "Come back to Elister and tap Try again."];
+  if (p === "mac-safari") return ["Safari → Settings → Websites → Notifications → set Elister to Allow.", "Also check macOS System Settings → Notifications → Safari (or Elister) is allowed.", "Tap Try again."];
+  return ["Click the icon left of the address bar → Site settings → Notifications → Allow.", "Check your computer allows notifications from the browser (Windows: Settings → System → Notifications; macOS: System Settings → Notifications).", "Click Try again."];
+}
+
 /**
- * Shown on every Elister screen until the device is ready to receive the assistant's call like a phone call:
- *  1. Install Elister as an app (Android / Chrome / Edge: one tap; iPhone: Share → Add to Home Screen, which Apple requires for calls).
- *  2. Turn on calls (notification permission + push), so the incoming-call banner appears even when Elister is closed.
- * Dismissable for three days.
+ * Shown on every Elister screen until this device can receive the assistant's call like a phone call, in two clear steps:
+ *  1. Add Elister to the home screen (Android / Chrome / Edge: one tap or menu steps; iPhone: Share → Add to Home Screen, which Apple requires).
+ *  2. Turn on call notifications, so the ringing notification arrives at the scheduled time even when Elister is closed.
+ * "Not now" hides it for a day; the Scheduled calls page always has the same controls.
  */
 export function AppReady() {
   const [, force] = useState(0);
@@ -28,68 +42,92 @@ export function AppReady() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [hidden, setHidden] = useState(true);
-  const [iosSteps, setIosSteps] = useState(false);
+  const [showSteps, setShowSteps] = useState(false);
+  const [installed, setInstalled] = useState(false);
 
+  const check = async () => {
+    if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) return setCalls("na");
+    if (Notification.permission === "denied") return setCalls("blocked");
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = await reg?.pushManager.getSubscription();
+    setCalls(sub && Notification.permission === "granted" ? "on" : "off");
+  };
   useEffect(() => {
     const f = () => force((n) => n + 1); listeners.add(f);
-    try { const t = Number(localStorage.getItem(KEY) ?? 0); setHidden(Date.now() - t < 3 * 86400_000); } catch { setHidden(false); }
-    void (async () => {
-      if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) return setCalls(isIos() && !standalone() ? "off" : "na");
-      if (Notification.permission === "denied") return setCalls("blocked");
-      const reg = await navigator.serviceWorker.getRegistration();
-      const sub = await reg?.pushManager.getSubscription();
-      setCalls(sub && Notification.permission === "granted" ? "on" : "off");
-    })();
-    return () => { listeners.delete(f); };
+    setInstalled(standalone());
+    try { const t = Number(localStorage.getItem(KEY) ?? 0); setHidden(Date.now() - t < 86400_000); } catch { setHidden(false); }
+    void check();
+    const onVis = () => { if (document.visibilityState === "visible") void check(); }; // back from phone settings
+    document.addEventListener("visibilitychange", onVis);
+    return () => { listeners.delete(f); document.removeEventListener("visibilitychange", onVis); };
   }, []);
 
   const ios = typeof navigator !== "undefined" && isIos();
-  const canInstall = !!deferred || (ios && typeof window !== "undefined" && !standalone());
-  const needCalls = calls === "off" || calls === "blocked";
-  if (hidden || calls === "unknown" || (!canInstall && !needCalls)) return null;
+  const needInstall = !installed && (ios || !!deferred || /android/i.test(typeof navigator !== "undefined" ? navigator.userAgent : ""));
+  if (hidden || calls === "unknown" || (calls === "on" && !needInstall) || (calls === "na" && !needInstall)) return null;
 
   const install = async () => {
-    if (deferred) { await deferred.prompt(); const c = await deferred.userChoice; if (c.outcome === "accepted") deferred = null; force((n) => n + 1); return; }
-    setIosSteps(true);
+    if (deferred) { await deferred.prompt(); const c = await deferred.userChoice; if (c.outcome === "accepted") { deferred = null; setInstalled(true); } force((n) => n + 1); return; }
+    setShowSteps(true);
   };
   const turnOn = async () => {
-    if (ios && !standalone()) { setIosSteps(true); return; }
+    if (ios && !installed) { setShowSteps(true); setMsg("On iPhone, add Elister to the Home Screen first, then open it from there."); return; }
     setBusy(true); setMsg(null);
     try {
       const r = await enableCallsHere();
-      if (r.status === "on") { setCalls("on"); setMsg("Calls are on. Elister will ring this device at your scheduled time."); }
+      if (r.status === "on") { setCalls("on"); setMsg("Done. Elister will ring this device at your scheduled time, even when the app is closed."); }
       else if (r.status === "denied") setCalls("blocked");
       else setMsg(r.error ?? (isBrave() ? BRAVE_HINT : "Couldn't turn on calls on this device."));
     } catch (e) { setMsg((e as Error).message); } finally { setBusy(false); }
   };
+  const retry = async () => {
+    try { const p = await Notification.requestPermission(); if (p === "granted") return void turnOn(); } catch { /* old Safari */ }
+    await check();
+    if (Notification.permission === "denied") setMsg("Still blocked. Follow the steps above, then tap Try again.");
+  };
   const dismiss = () => { try { localStorage.setItem(KEY, String(Date.now())); } catch { /* ignore */ } setHidden(true); };
+  const steps = STEPS[platform()];
+  const Step = ({ n, done, title, children }: { n: number; done: boolean; title: string; children?: React.ReactNode }) => (
+    <li className="flex gap-3">
+      <span className={`grid size-7 shrink-0 place-items-center rounded-full text-xs font-bold ${done ? "bg-[#1fbf75] text-white" : "bg-white text-[#0b3558]"}`}>{done ? <CheckCircle2 size={15} /> : n}</span>
+      <div className="min-w-0 flex-1"><div className={`text-sm font-semibold ${done ? "text-white/60 line-through" : ""}`}>{title}</div>{!done && children}</div>
+    </li>
+  );
 
   return (
-    <div className="app-ready fixed inset-x-3 bottom-3 z-[900] mx-auto max-w-xl rounded-3xl border border-white/10 bg-[#0b3558] p-4 text-white shadow-2xl sm:bottom-5" role="region" aria-label="Get Elister's calls on this device">
-      <button onClick={dismiss} className="absolute right-3 top-3 grid size-8 place-items-center rounded-full text-white/70 hover:bg-white/10" aria-label="Not now"><X size={16} /></button>
+    <div className="app-ready fixed inset-x-3 bottom-3 z-[900] mx-auto max-h-[80dvh] max-w-xl overflow-y-auto rounded-3xl border border-white/10 bg-[#0b3558] p-4 text-white shadow-2xl sm:bottom-5" role="region" aria-label="Get Elister's calls on this device">
+      <button onClick={dismiss} className="absolute end-2 top-2 grid size-9 place-items-center rounded-full text-white/70 hover:bg-white/10" aria-label="Not now"><X size={18} /></button>
       <div className="flex items-start gap-3 pe-8">
         <img src="/brand/icon-192.png" alt="" className="size-11 shrink-0 rounded-2xl bg-white" />
         <div className="min-w-0">
-          <div className="font-semibold">Get Elister&apos;s calls like a phone call</div>
-          <p className="mt-0.5 text-sm text-white/75">
-            {canInstall ? "Install Elister on this device, then turn on calls. Your assistant will ring you at your scheduled time, even when Elister is closed." : "Turn on calls so your assistant can ring you at your scheduled time, even when Elister is closed."}
-          </p>
+          <div className="font-semibold">Get your assistant&apos;s call like a phone call</div>
+          <p className="mt-0.5 text-sm text-white/75">Two quick steps, so Elister can ring you at your scheduled time even when the app is closed.</p>
         </div>
       </div>
-      {iosSteps && (
-        <ol className="mt-3 space-y-1 rounded-2xl bg-white/10 p-3 text-sm">
-          <li>1. Tap <Share size={14} className="mx-0.5 inline" /> <b>Share</b> at the bottom of Safari.</li>
-          <li>2. Choose <b>Add to Home Screen</b>, then <b>Add</b>.</li>
-          <li>3. Open <b>Elister</b> from your Home Screen and tap <b>Turn on calls</b> there.</li>
-        </ol>
-      )}
-      {calls === "blocked" && <p className="mt-3 rounded-2xl bg-white/10 p-3 text-sm">Notifications are blocked for Elister. Click the icon left of the address bar → Site settings → Notifications → Allow, then reload.</p>}
+      <ol className="mt-3 space-y-3">
+        {needInstall || installed ? (
+          <Step n={1} done={installed} title={ios ? "Add Elister to your Home Screen" : "Add Elister to your home screen"}>
+            {showSteps && <ol className="mt-1.5 list-decimal space-y-1 ps-4 text-[13px] text-white/80">{steps.map((x) => <li key={x}>{x}</li>)}</ol>}
+            <button onClick={() => void install()} className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#0b3558] sm:w-auto">
+              {ios ? <Share size={16} /> : <Download size={16} />}{deferred ? "Add to home screen" : showSteps ? "Follow the steps above" : "Show me how"}
+            </button>
+          </Step>
+        ) : null}
+        <Step n={needInstall || installed ? 2 : 1} done={calls === "on"} title="Turn on call notifications">
+          {calls === "blocked" ? (
+            <>
+              <p className="mt-1 text-[13px] text-white/80">Notifications are blocked for Elister on this device, so the browser can&apos;t ask again. To allow them:</p>
+              <ol className="mt-1.5 list-decimal space-y-1 ps-4 text-[13px] text-white/80">{unblockSteps().map((x) => <li key={x}>{x}</li>)}</ol>
+              <button onClick={() => void retry()} className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#1fbf75] px-4 py-2.5 text-sm font-semibold text-white sm:w-auto"><BellRing size={16} />Try again</button>
+            </>
+          ) : calls === "na" ? (
+            <p className="mt-1 text-[13px] text-white/80">{ios ? "Available after you open Elister from the Home Screen." : "This browser can't receive notifications. Try Chrome, Edge or Safari."}</p>
+          ) : (
+            <button onClick={() => void turnOn()} disabled={busy} className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#1fbf75] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto">{busy ? <Loader2 size={16} className="animate-spin" /> : <BellRing size={16} />}Turn on notifications</button>
+          )}
+        </Step>
+      </ol>
       {msg && <p className="mt-3 rounded-2xl bg-white/10 p-3 text-sm">{msg}</p>}
-      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-        {canInstall && <button onClick={() => void install()} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-[#0b3558]"><Download size={16} />{ios ? "Add to Home Screen" : "Install Elister"}</button>}
-        {calls === "off" && <button onClick={() => void turnOn()} disabled={busy} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#1fbf75] px-4 py-3 text-sm font-semibold text-white disabled:opacity-60">{busy ? <Loader2 size={16} className="animate-spin" /> : <BellRing size={16} />}Turn on calls</button>}
-        {calls === "blocked" && <button onClick={() => location.reload()} className="flex-1 rounded-xl border border-white/30 px-4 py-3 text-sm font-semibold">I&apos;ve allowed it, reload</button>}
-      </div>
     </div>
   );
 }

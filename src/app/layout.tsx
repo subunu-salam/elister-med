@@ -17,6 +17,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: [{ media: "(prefers-color-scheme: light)", color: "#e9edf4" }, { media: "(prefers-color-scheme: dark)", color: "#0d1017" }] };
 
 // Applies the saved theme before first paint to avoid a light/dark flash.
+// Chrome/Edge/Android fire "beforeinstallprompt" very early, often before the app's JS loads; keep it so the Install button can use it.
+const installScript = `window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();window.__bip=e;window.dispatchEvent(new Event("elister:installable"))});`;
 const themeScript = `try{var t=localStorage.getItem("theme");if(t==="dark"||(!t&&matchMedia("(prefers-color-scheme: dark)").matches))document.documentElement.classList.add("dark")}catch(e){}`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -24,6 +26,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" suppressHydrationWarning className={`${latin.variable} ${arabic.variable} ${malayalam.variable} h-full antialiased`}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <script dangerouslySetInnerHTML={{ __html: installScript }} />
       </head>
       <body className="min-h-full font-sans">
         {/* All routes read cookies/session/db at request time; they stream in behind this boundary. */}
