@@ -239,7 +239,7 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
     live.current = true;
     void fetch("/api/ai/call/answer", { method: "POST" }).catch(() => null);
     await chime("connect");
-    if (brief.voice.live && chapter === 0) { setCaption(L(lang, "Connecting…", "കണക്റ്റ് ചെയ്യുന്നു…")); if (await startLive()) { sp.stop(); return; } liveRef.current?.close(); liveRef.current = null; setCaption(""); }
+    if (brief.voice.live && chapter === 0) { setCaption(L(lang, "Connecting…", "കണക്റ്റ് ചെയ്യുന്നു…")); if (await startLive()) { sp.stop(); return; } setCaption(""); }
     await new Promise((r) => setTimeout(r, 450));
     if (chapter > 0) void playReport(chapter); else { tries.current = 0; void askOpening(); }
   };
