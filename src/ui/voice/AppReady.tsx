@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { BellRing, Download, Loader2, Share, X } from "lucide-react";
+import { BellRing, Bookmark, CheckCircle2, Download, Loader2, Share, X } from "lucide-react";
 import { BRAVE_HINT, enableCallsHere, isBrave } from "./DeviceCalls";
 
 type InstallEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: "accepted" | "dismissed" }> };
@@ -91,5 +91,76 @@ export function AppReady() {
         {calls === "blocked" && <button onClick={() => location.reload()} className="flex-1 rounded-xl border border-white/30 px-4 py-3 text-sm font-semibold">I&apos;ve allowed it, reload</button>}
       </div>
     </div>
+  );
+}
+
+type Platform = "ios" | "android" | "mac-safari" | "firefox" | "chromium" | "other";
+function platform(): Platform {
+  const ua = navigator.userAgent;
+  if (isIos()) return "ios";
+  if (/android/i.test(ua)) return "android";
+  if (/firefox/i.test(ua)) return "firefox";
+  if (/safari/i.test(ua) && !/chrome|chromium|edg/i.test(ua)) return "mac-safari";
+  if (/chrome|chromium|edg/i.test(ua)) return "chromium";
+  return "other";
+}
+const STEPS: Record<Platform, string[]> = {
+  ios: ["Open Elister in Safari (iOS 16.4 or later).", "Tap Share, then Add to Home Screen, then Add.", "Open Elister from the Home Screen icon and tap Turn on calls. iPhone only delivers notifications to apps added to the Home Screen."],
+  android: ["Tap Install Elister below, or the browser menu ⋮ → Install app / Add to Home screen.", "Open Elister from its icon and tap Turn on calls, then Allow."],
+  "mac-safari": ["In Safari choose File → Add to Dock (macOS Sonoma or later).", "Open Elister from the Dock and tap Turn on calls, then Allow."],
+  firefox: ["Firefox can't install web apps, but notifications still work: press Ctrl/⌘ + D to bookmark Elister.", "Tap Turn on calls and Allow. Keep Firefox running in the background to receive calls."],
+  chromium: ["Click Install Elister below, or the install icon at the right of the address bar (Chrome / Edge).", "Open Elister from the Start menu, Dock or desktop and tap Turn on calls, then Allow."],
+  other: ["Bookmark this page (Ctrl/⌘ + D) or add it to your home screen from the browser menu.", "Tap Turn on calls and Allow notifications."],
+};
+
+/** Always-available card (Scheduled calls page): install / bookmark Elister and turn on notifications, with steps for this exact device. */
+export function InstallAppCard() {
+  const [, force] = useState(0);
+  const [plat, setPlat] = useState<Platform | null>(null);
+  const [installed, setInstalled] = useState(false);
+  const [calls, setCalls] = useState<"on" | "off" | "blocked" | "na">("na");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  useEffect(() => {
+    const f = () => force((n) => n + 1); listeners.add(f);
+    setPlat(platform()); setInstalled(standalone());
+    void (async () => {
+      if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) return;
+      if (Notification.permission === "denied") return setCalls("blocked");
+      const sub = await (await navigator.serviceWorker.getRegistration())?.pushManager.getSubscription();
+      setCalls(sub && Notification.permission === "granted" ? "on" : "off");
+    })();
+    return () => { listeners.delete(f); };
+  }, []);
+  if (!plat) return null;
+  const install = async () => { if (!deferred) return; await deferred.prompt(); if ((await deferred.userChoice).outcome === "accepted") { deferred = null; setInstalled(true); } force((n) => n + 1); };
+  const turnOn = async () => {
+    setBusy(true); setMsg(null);
+    try { const r = await enableCallsHere(); if (r.status === "on") setCalls("on"); else if (r.status === "denied") setCalls("blocked"); else setMsg(r.error ?? (isBrave() ? BRAVE_HINT : "Couldn't turn on calls on this device.")); }
+    catch (e) { setMsg((e as Error).message); } finally { setBusy(false); }
+  };
+  const needsHome = plat === "ios" && !installed;
+  return (
+    <section className="rounded-3xl border border-border bg-surface p-4 shadow-card sm:p-5" aria-label="Install Elister on this device">
+      <div className="flex items-start gap-3">
+        <img src="/brand/icon-192.png" alt="" className="size-11 shrink-0 rounded-2xl border border-border bg-white" />
+        <div className="min-w-0 flex-1">
+          <h2 className="font-semibold">Keep Elister on this device</h2>
+          <p className="text-sm text-muted">Install or bookmark Elister so your assistant can ring you with a notification on desktop, Android and iPhone, even when the tab is closed.</p>
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2 text-xs">
+        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 ${installed ? "bg-emerald-500/15 text-emerald-600" : "bg-surface-2 text-muted"}`}>{installed ? <CheckCircle2 size={13} /> : <Bookmark size={13} />}{installed ? "Installed as an app" : "Not installed"}</span>
+        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 ${calls === "on" ? "bg-emerald-500/15 text-emerald-600" : "bg-surface-2 text-muted"}`}><BellRing size={13} />{calls === "on" ? "Notifications on" : calls === "blocked" ? "Notifications blocked" : calls === "na" ? (needsHome ? "Add to Home Screen first" : "Not supported here") : "Notifications off"}</span>
+      </div>
+      {!installed && <ol className="mt-3 list-decimal space-y-1 ps-5 text-sm">{STEPS[plat].map((x) => <li key={x}>{x}</li>)}</ol>}
+      {calls === "blocked" && <p className="mt-3 rounded-xl bg-surface-2 p-3 text-sm">Notifications are blocked for this site. Open the site settings (icon left of the address bar, or Settings → Notifications → Elister on a phone), set Notifications to Allow, then reload.</p>}
+      {msg && <p className="mt-3 rounded-xl bg-surface-2 p-3 text-sm">{msg}</p>}
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+        {!installed && deferred && <button onClick={() => void install()} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-fg"><Download size={16} />Install Elister</button>}
+        {!installed && needsHome && <span className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-border px-4 py-2.5 text-sm"><Share size={16} />Share → Add to Home Screen</span>}
+        {calls === "off" && <button onClick={() => void turnOn()} disabled={busy} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#1fbf75] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{busy ? <Loader2 size={16} className="animate-spin" /> : <BellRing size={16} />}Turn on calls</button>}
+      </div>
+    </section>
   );
 }

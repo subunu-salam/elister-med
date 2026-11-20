@@ -5,6 +5,7 @@ import { BellRing, CalendarDays, Check, ChevronLeft, ChevronRight, Clock, Loader
 import { addDaysYmd, callsOn, DEFAULT_TZ, join24, split24, TZ_CHOICES, upcomingCalls, ymdDow, zonedYmd, type CallSchedule } from "@/modules/ai/schedule-core";
 import { ringHere } from "./CallListener";
 import { DeviceCalls } from "./DeviceCalls";
+import { InstallAppCard } from "./AppReady";
 
 type Prefs = CallSchedule & { lang: "en" | "ml"; sections: string[]; lockedBy?: string };
 type Upcoming = { at: string; ymd: string; kind: "callback" | "daily" };
@@ -113,6 +114,7 @@ export function ScheduleScreen({ initial, highlight }: { initial: ScheduleData; 
         {highlight === "callback" && first?.kind === "callback" && <p className="relative mt-4 rounded-2xl bg-white/10 p-3 text-sm">You asked Elister to call back. It will ring this device at {T(first.at)}. You can change your regular call below.</p>}
       </section>
 
+      <InstallAppCard />
       <DeviceCalls />
 
       {err && <p className="rounded-2xl bg-warn/10 p-3 text-sm">{err}</p>}
