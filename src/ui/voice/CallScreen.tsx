@@ -83,6 +83,7 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
     } catch { a = { intent: "unknown", answer: L(lang, "Sorry, I lost the connection for a moment. Could you say that again?", "ക്ഷമിക്കണം, ഒരു നിമിഷം കണക്ഷൻ പോയി. ഒന്നുകൂടി പറയാമോ?"), followUps: follow, handled: false }; }
     const l: Lang = /[ഀ-ൿ]/.test(a.answer) ? "ml" : "en";
     if (a.switchLang) setLang(a.switchLang);
+    if (a.dailyTime) window.dispatchEvent(new Event("elister:prefs-changed"));
     setLines((x) => [...x, { who: "elister", text: a.answer, lang: l, href: a.href }]);
     setFollow(a.followUps);
     setPhase("replying");
@@ -196,6 +197,15 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
           const at = until.toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: tz });
           setCallbackAt(at); snoozedRef.current = true;
           return { ok: true, callback_at_local_time: at, minutes_from_now: Math.round(mins) };
+        }
+        if (name === "set_daily_call_time") {
+          const t = String(args.clock_time ?? "");
+          if (!/^([01]?\d|2[0-3]):[0-5]\d$/.test(t)) return { ok: false, error: "Use HH:MM, 24-hour" };
+          const hhmm = t.padStart(5, "0");
+          const r = await fetch("/api/ai/prefs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ callTime: hhmm }) });
+          if (!r.ok) return { ok: false, error: "The call time is managed by the administrator and can't be changed." };
+          window.dispatchEvent(new Event("elister:prefs-changed"));
+          return { ok: true, daily_call_time: hhmm };
         }
         if (name === "ask_books") {
           const r = await fetch("/api/ai/brief/ask", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ q: String(args.question ?? ""), lang: "en" }) });
@@ -340,6 +350,7 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
               <button onClick={carryOn} className="rounded-2xl bg-[#1fbf75] px-4 py-4 text-sm font-semibold text-white shadow-lg transition hover:-translate-y-0.5">{L(lang, "Yes, carry on", "തുടരൂ")}</button>
               <button onClick={() => void callBackLater(30)} className="rounded-2xl bg-white/12 px-4 py-4 text-sm font-semibold transition hover:bg-white/20">{L(lang, "Call me back in 30 min", "30 മിനിറ്റ് കഴിഞ്ഞ് വിളിക്കൂ")}</button>
             </div>
+            <LaterChoices lang={lang} tz={tz} onPick={(m) => void callBackLater(m)} />
             <p className="text-center text-xs text-white/60">{canListen ? L(lang, "Or just say \"carry on\" or \"call me later\".", "അല്ലെങ്കിൽ \"തുടരൂ\" അല്ലെങ്കിൽ \"പിന്നെ വിളിക്കൂ\" എന്ന് പറയൂ.") : ""}</p>
             <div className="text-center"><button onClick={() => hangUp()} className="call-btn mx-auto bg-[#e5484d]" aria-label="Hang up"><PhoneOff size={26} /></button></div>
           </div>
@@ -370,6 +381,24 @@ export function CallScreen({ initial, answered, name }: { initial: CallBrief; an
       </div>
     </div>,
     document.body,
+  );
+}
+
+/** "Call back later": 1 hour, 2 hours or a time the owner picks (in their own time zone). */
+function LaterChoices({ lang, tz, onPick }: { lang: Lang; tz: string; onPick: (minutes: number) => void }) {
+  const [t, setT] = useState("");
+  const pickTime = () => { const m = parseCallback(`call me back at ${t}`, new Date(), tz); if (m) onPick(m); };
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-2 gap-2">
+        <button onClick={() => onPick(60)} className="rounded-xl bg-white/8 px-3 py-2.5 text-xs font-semibold hover:bg-white/15">{L(lang, "In 1 hour", "1 മണിക്കൂർ കഴിഞ്ഞ്")}</button>
+        <button onClick={() => onPick(120)} className="rounded-xl bg-white/8 px-3 py-2.5 text-xs font-semibold hover:bg-white/15">{L(lang, "In 2 hours", "2 മണിക്കൂർ കഴിഞ്ഞ്")}</button>
+      </div>
+      <div className="flex gap-2">
+        <input type="time" value={t} onChange={(e) => setT(e.target.value)} aria-label={L(lang, "Call back at", "തിരികെ വിളിക്കേണ്ട സമയം")} className="min-w-0 flex-1 rounded-xl bg-white/10 px-3 py-2.5 text-sm text-white [color-scheme:dark]" />
+        <button onClick={pickTime} disabled={!t} className="rounded-xl bg-white px-4 py-2.5 text-xs font-semibold text-[#0b3558] disabled:opacity-40">{L(lang, "Call me then", "അപ്പോൾ വിളിക്കൂ")}</button>
+      </div>
+    </div>
   );
 }
 
