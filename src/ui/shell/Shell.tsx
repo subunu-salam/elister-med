@@ -138,7 +138,7 @@ export function Shell({
         </div>
       )}
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 max-w-full flex-1 flex-col overflow-x-clip">
         <header className="topbar no-print sticky top-0 z-20 flex h-16 items-center gap-2 px-4 md:px-6">
           <button onClick={() => setDrawer(true)} aria-label="Open menu" className={cn(iconBtn, "md:hidden")}><Menu size={19} /></button>
           <button onClick={toggleSidebar} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} className={cn(iconBtn, "hidden md:grid")}>{collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}</button>
@@ -168,7 +168,7 @@ export function Shell({
           </div>
         </header>
 
-        <main aria-busy={busy} className={cn("flex-1 px-4 pb-24 pt-5 transition-opacity duration-200 md:px-6", busy && "opacity-60")}>
+        <main aria-busy={busy} className={cn("min-w-0 flex-1 px-4 pb-24 pt-5 transition-opacity duration-200 md:px-6", busy && "opacity-60")}>
           <div className="mx-auto max-w-[1480px]">
             {current && current.href !== "/dashboard" && (
               <nav aria-label="Breadcrumb" className="no-print mb-3 flex items-center gap-1.5 text-xs text-muted">

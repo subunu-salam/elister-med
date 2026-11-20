@@ -334,3 +334,9 @@ button, a, [role="button"] { touch-action: manipulation; }
 .app-ready { bottom: max(0.75rem, env(safe-area-inset-bottom)); }
 /* Installed app (standalone): no browser chrome, so respect the notch and the status bar. */
 @media (display-mode: standalone) { body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); } }
+
+/* Phones: a CSS grid with no column template sizes its single column to the widest child, which pushed the dashboard wider than
+ * the screen (cards and the bottom banner cut off on the right). Give every such grid one shrinkable column, and never let the page scroll sideways. */
+@layer base { :where(.grid) { grid-template-columns: minmax(0, 1fr); } } /* any grid-cols-* utility still wins */
+html, body { max-width: 100%; overflow-x: clip; }
+img, svg, video, canvas { max-width: 100%; }
